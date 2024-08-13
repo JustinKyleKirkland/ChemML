@@ -4,25 +4,45 @@ import sys
 import pandas as pd
 from PyQt5.QtWidgets import (
     QApplication,
+    QComboBox,
     QFileDialog,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
-    QComboBox,
-    QLabel
 )
-from PyQt5.QtCore import Qt
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
+from utils.logging_config import setup_logging
+
+# logging.basicConfig(
+#     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+# )
 
 
 class CSVInteractiveApp(QWidget):
+    """
+    A PyQt5 application for converting CSV files to images.
+
+    Attributes:
+        ml_dropdown (QComboBox): A dropdown menu for selecting machine learning algorithms.
+        load_button (QPushButton): A button for loading a CSV file.
+        table_widget (QTableWidget): A table widget for displaying the CSV data.
+        image_path (str): The path to save the generated image.
+
+    Methods:
+        __init__(): Initializes the CSVInteractiveApp.
+        load_csv(): Opens a file dialog to load a CSV file.
+        display_csv_image(csv_file): Displays the CSV data in the table widget.
+        dragEnterEvent(event): Handles the drag enter event for file dropping.
+        dropEvent(event): Handles the drop event for file dropping.
+        closeEvent(event): Handles the close event of the application.
+    """
+
     def __init__(self):
         super().__init__()
+
+        self.logger = logging.getLogger(__name__)
 
         self.setWindowTitle("CSV to Image Converter")
         self.setGeometry(100, 100, 800, 600)
@@ -30,8 +50,7 @@ class CSVInteractiveApp(QWidget):
         self.layout = QVBoxLayout()
 
         self.ml_dropdown = QComboBox()
-        self.ml_dropdown.addItems(
-            ["Random Forest", "Logistic Regression", "SVM"])
+        self.ml_dropdown.addItems(["Random Forest", "Logistic Regression", "SVM"])
         self.layout.addWidget(self.ml_dropdown)
 
         self.load_button = QPushButton("Load CSV")
@@ -98,8 +117,9 @@ class CSVInteractiveApp(QWidget):
 
 
 if __name__ == "__main__":
+    setup_logging()
     app = QApplication(sys.argv)
     window = CSVInteractiveApp()
     window.show()
-    logging.info("Application started.")
+    logging.getLogger(__name__).info("Application started.")
     sys.exit(app.exec_())
