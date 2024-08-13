@@ -10,7 +10,10 @@ from PyQt5.QtWidgets import (
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
+    QComboBox,
+    QLabel
 )
+from PyQt5.QtCore import Qt
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -25,6 +28,11 @@ class CSVInteractiveApp(QWidget):
         self.setGeometry(100, 100, 800, 600)
 
         self.layout = QVBoxLayout()
+
+        self.ml_dropdown = QComboBox()
+        self.ml_dropdown.addItems(
+            ["Random Forest", "Logistic Regression", "SVM"])
+        self.layout.addWidget(self.ml_dropdown)
 
         self.load_button = QPushButton("Load CSV")
         self.load_button.clicked.connect(self.load_csv)
