@@ -15,10 +15,6 @@ from PyQt5.QtWidgets import (
 
 from utils.logging_config import setup_logging
 
-# logging.basicConfig(
-#     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-# )
-
 
 class CSVInteractiveApp(QWidget):
     """
@@ -42,7 +38,7 @@ class CSVInteractiveApp(QWidget):
     def __init__(self):
         super().__init__()
 
-        self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger("CSVInteractiveApp")
 
         self.setWindowTitle("CSV to Image Converter")
         self.setGeometry(100, 100, 800, 600)
@@ -75,6 +71,7 @@ class CSVInteractiveApp(QWidget):
             logging.info(f"Loading CSV file: {file_name}")
             self.display_csv_image(file_name)
         else:
+            print("test1")
             logging.info("No file selected")
 
     def display_csv_image(self, csv_file):

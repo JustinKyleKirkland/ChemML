@@ -10,27 +10,29 @@ def setup_logging(log_level=logging.INFO):
     log_file_path = os.path.join("logs", "app.log")
 
     # Create a custom logger
-    logger = logging.getLogger()
+    logger = logging.getLogger("CSVInteractiveApp")
     logger.setLevel(log_level)
 
-    # Define a formatter
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
+    # Check if handlers already exist to avoid duplicates
+    if not logger.handlers:
+        # Define a formatter
+        formatter = logging.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        )
 
-    # Create a file handler
-    file_handler = logging.FileHandler(log_file_path)
-    file_handler.setLevel(log_level)
-    file_handler.setFormatter(formatter)
+        # Create a file handler
+        file_handler = logging.FileHandler(log_file_path)
+        file_handler.setLevel(log_level)
+        file_handler.setFormatter(formatter)
 
-    # Create a console handler
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(log_level)
-    console_handler.setFormatter(formatter)
+        # Create a console handler
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(log_level)
+        console_handler.setFormatter(formatter)
 
-    # Add the handlers to the logger
-    logger.addHandler(file_handler)
-    logger.addHandler(console_handler)
+        # Add the handlers to the logger
+        logger.addHandler(file_handler)
+        logger.addHandler(console_handler)
 
     # Log the application start
     logger.info("Logging is set up and ready to go.")

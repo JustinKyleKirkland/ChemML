@@ -1,7 +1,8 @@
+import logging
 import unittest
+from unittest.mock import MagicMock, patch
 
-from PyQt5.QtCore import QPoint, Qt, QUrl
-from PyQt5.QtTest import QTest
+import pandas as pd
 from PyQt5.QtWidgets import QApplication
 
 from gui.sample_gui import CSVInteractiveApp
@@ -13,40 +14,114 @@ class TestCSVInteractiveApp(unittest.TestCase):
         self.window = CSVInteractiveApp()
 
     def tearDown(self):
-        self.window.close()
+        self.app.quit()
 
-    def test_load_csv(self):
-        # Simulate clicking the load button
-        QTest.mouseClick(self.window.load_button, Qt.LeftButton)
-        # Assert that the file dialog is opened
-        self.assertTrue(self.window.isVisible())
+    @patch("PyQt5.QtWidgets.QFileDialog.getOpenFileName")
+    def test_load_csv(self, mock_getOpenFileName):
+        mock_getOpenFileName.return_value = ("test.csv", "")
 
-    def test_display_csv_image(self):
-        # Simulate loading a CSV file
-        self.window.display_csv_image("test.csv")
-        # Assert that the table widget is populated with data
-        self.assertEqual(self.window.table_widget.rowCount(), 3)
-        self.assertEqual(self.window.table_widget.columnCount(), 2)
+        with patch("pandas.read_csv") as mock_read_csv:
+            mock_read_csv.return_value = pd.DataFrame(
+                {
+                    "Column1": [1, 2, 3],
+                    "Column2": [4, 5, 6],
+                }
+            )
 
-    def test_drag_and_drop_csv(self):
-        # Simulate dragging and dropping a CSV file
-        event = QTest.QDropEvent(
-            QPoint(0, 0),
-            Qt.CopyAction,
-            Qt.DropAction(Qt.CopyAction | Qt.MoveAction),
-            QUrl.fromLocalFile("test.csv"),
-            None,
+            self.window.load_csv()
+
+            self.assertEqual(self.window.table_widget.rowCount(), 3)
+            self.assertEqual(self.window.table_widget.columnCount(), 2)
+            self.assertEqual(
+                self.window.table_widget.horizontalHeaderItem(0).text(), "Column1"
+            )
+            self.assertEqual(self.window.table_widget.item(0, 0).text(), "1")
+            self.assertEqual(self.window.table_widget.item(1, 1).text(), "5")
+
+    @patch("pandas.read_csv")
+    def test_display_csv_image(self, mock_read_csv):
+        # Mock pandas read_csv to return a sample DataFrame
+        mock_read_csv.return_value = pd.DataFrame(
+            {"Column1": [1, 2], "Column2": [3, 4]}
         )
-        self.window.dropEvent(event)
-        # Assert that the CSV file is displayed in the table widget
-        self.assertEqual(self.window.table_widget.rowCount(), 3)
-        self.assertEqual(self.window.table_widget.columnCount(), 2)
 
-    def test_close_event(self):
-        # Simulate closing the application
-        self.window.closeEvent(None)
-        # Assert that the application is closed
-        self.assertFalse(self.window.isVisible())
+        # Call display_csv_image directly
+        self.window.display_csv_image("test.csv")
+
+        # Check if the data was displayed correctly
+        self.assertEqual(self.window.table_widget.rowCount(), 2)
+        self.assertEqual(self.window.table_widget.columnCount(), 2)
+        self.assertEqual(
+            self.window.table_widget.horizontalHeaderItem(0).text(), "Column1"
+        )
+        self.assertEqual(self.window.table_widget.item(1, 1).text(), "4")
+
+    @patch("PyQt5.QtWidgets.QFileDialog.getOpenFileName")
+    def test_load_csv_no_file(self, mock_getOpenFileName):
+        # Mock the file dialog to return no file
+        mock_getOpenFileName.return_value = ("", "")
+
+        with patch("pandas.read_csv"):
+            with self.assertLogs(logging.getLogger(), level="INFO") as log:
+                self.window.load_csv()
+                # Check if the log contains the expected message
+                self.assertIn("INFO:root:No file selected", log.output)
+
+    def test_dragEnterEvent_accept(self):
+        event = MagicMock()
+        event.mimeData().hasUrls.return_value = True
+        self.window.dragEnterEvent(event)
+        event.accept.assert_called_once()
+
+    def test_dragEnterEvent_ignore(self):
+        event = MagicMock()
+        event.mimeData().hasUrls.return_value = False
+        self.window.dragEnterEvent(event)
+        event.ignore.assert_called_once()
+
+    @patch("PyQt5.QtWidgets.QFileDialog.getOpenFileName")
+    def test_dropEvent(self, mock_getOpenFileName):
+        event = MagicMock()
+        mime_data = MagicMock()
+        mime_data.hasUrls.return_value = True
+        mime_data.urls.return_value = [
+            MagicMock(toLocalFile=MagicMock(return_value="test.csv"))
+        ]
+        event.mimeData.return_value = mime_data
+
+        # Mock pandas read_csv
+        with patch("pandas.read_csv") as mock_read_csv:
+            mock_read_csv.return_value = pd.DataFrame(
+                {"Column1": [1, 2], "Column2": [3, 4]}
+            )
+
+            self.window.dropEvent(event)
+
+            # Check if the data was displayed correctly
+            self.assertEqual(self.window.table_widget.rowCount(), 2)
+            self.assertEqual(self.window.table_widget.columnCount(), 2)
+
+    @patch("PyQt5.QtWidgets.QFileDialog.getOpenFileName")
+    def test_closeEvent(self, mock_getOpenFileName):
+        event = MagicMock()
+        mime_data = MagicMock()
+        mime_data.hasUrls.return_value = True
+        mime_data.urls.return_value = [
+            MagicMock(toLocalFile=MagicMock(return_value="test.csv"))
+        ]
+        event.mimeData.return_value = mime_data
+
+        # Mock pandas read_csv
+        with patch("pandas.read_csv") as mock_read_csv:
+            mock_read_csv.return_value = pd.DataFrame(
+                {"Column1": [1, 2], "Column2": [3, 4]}
+            )
+
+            self.window.dropEvent(event)
+
+            # Check if the data was displayed correctly
+            self.assertEqual(self.window.table_widget.rowCount(), 2)
+            self.assertEqual(self.window.table_widget.columnCount(), 2)
 
 
 if __name__ == "__main__":
