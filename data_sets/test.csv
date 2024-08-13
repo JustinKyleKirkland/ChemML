@@ -1,5 +1,5 @@
 ﻿test col1,test col2,test col3,test col4,test col5,test col6,test col7,test col8,test col9,test col10
-A,2,3,4,5,6,7,8,9,10
+A,2,3,4,5,6,7,8,9,NULL
 B,3,4,5,6,7,8,9,10,11
 A,2,3,4,5,6,7,8,9,10
 B,3,4,5,6,7,8,9,10,11

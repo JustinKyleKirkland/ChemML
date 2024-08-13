@@ -2,6 +2,7 @@ import logging
 import sys
 
 import pandas as pd
+from PyQt5.QtCore import QPoint, Qt
 from PyQt5.QtGui import QFontMetrics
 from PyQt5.QtWidgets import (
     QApplication,
@@ -10,6 +11,7 @@ from PyQt5.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMenu,
     QMessageBox,
     QPushButton,
     QTableWidget,
@@ -18,6 +20,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
+from utils.data_utils import impute_values, one_hot_encode, validate_csv
 from utils.logging_config import setup_logging
 
 
@@ -26,66 +29,133 @@ class CSVInteractiveApp(QWidget):
         super().__init__()
 
         self.logger = logging.getLogger("CSVInteractiveApp")
+        self.df = pd.DataFrame()  # Initialize the DataFrame
 
         self.setWindowTitle("ChemML")
         self.setAcceptDrops(True)
 
         self.layout = QVBoxLayout()
-
-        # Machine Learning Algorithm Dropdown
-        # TODO: Make these actually link to something
-        self.ml_dropdown = QComboBox()
-        self.ml_dropdown.addItems(["Random Forest", "Logistic Regression", "SVM"])
-        self.layout.addWidget(self.ml_dropdown)
-
-        # Load CSV button
-        self.load_button = QPushButton("Load CSV")
-        self.load_button.clicked.connect(self.load_csv)
-        self.layout.addWidget(self.load_button)
-
-        # Filter interface
-        filter_layout = QHBoxLayout()
-
-        # Column selection dropdown
-        self.column_dropdown = QComboBox()
-        filter_layout.addWidget(QLabel("Filter Column:"))
-        filter_layout.addWidget(self.column_dropdown)
-
-        # Condition selection dropdown
-        self.condition_dropdown = QComboBox(self)
-        self.condition_dropdown.addItems(
-            ["Contains", "Equals", "Starts with", "Ends with", ">=", "<=", ">", "<"]
+        self.error_label = self.create_error_label()
+        self.ml_button, self.ml_menu = self.create_ml_button()
+        self.load_button = self.create_load_button()
+        self.column_dropdown, self.condition_dropdown, self.value_edit = (
+            self.create_filter_widgets()
         )
-        filter_layout.addWidget(QLabel("Condition:"))
-        filter_layout.addWidget(self.condition_dropdown)
+        self.filter_button = self.create_filter_button()
+        self.table_widget = self.create_table_widget()
 
-        # Value Input
-        self.value_edit = QLineEdit(self)
-        self.value_edit.setPlaceholderText("Value")
-        filter_layout.addWidget(QLabel("Value:"))
-        filter_layout.addWidget(self.value_edit)
-
-        # Apply filter button
-        self.filter_button = QPushButton("Apply Filter")
-        self.filter_button.clicked.connect(self.filter_data)
-        filter_layout.addWidget(self.filter_button)
-
-        self.layout.addLayout(filter_layout)
-
-        # Table widget
-        self.table_widget = QTableWidget(self)
-        self.table_widget.setSortingEnabled(True)
+        self.layout.addWidget(self.error_label)
+        self.layout.addWidget(self.ml_button)
+        self.layout.addWidget(self.load_button)
+        self.layout.addLayout(self.create_filter_layout())
         self.layout.addWidget(self.table_widget)
-
         self.setLayout(self.layout)
 
-        self.min_width = 400
-        self.min_height = 300
-        self.max_width = 1200
-        self.max_height = 800
+        self.set_window_size_limits()
+        self.setup_context_menu()
 
+    def create_error_label(self):
+        error_label = QLabel()
+        error_label.setStyleSheet("color: red")
+        return error_label
+
+    def create_ml_button(self):
+        ml_button = QPushButton("Select ML Methods")
+        ml_button.setCheckable(True)
+        ml_menu = QMenu(ml_button)
+
+        for method in ["Random Forest", "Logistic Regression", "SVM"]:
+            action = ml_menu.addAction(method)
+            action.setCheckable(True)
+            action.triggered.connect(
+                lambda checked, a=action: self.toggle_ml_method(a, checked)
+            )
+
+        ml_button.clicked.connect(self.show_ml_menu)
+        ml_button.setMenu(ml_menu)  # Set the menu to the button
+        return ml_button, ml_menu
+
+    def create_load_button(self):
+        load_button = QPushButton("Load CSV")
+        load_button.clicked.connect(self.load_csv)
+        return load_button
+
+    def create_filter_widgets(self):
+        column_dropdown = QComboBox()
+        condition_dropdown = QComboBox()
+        condition_dropdown.addItems(
+            ["Contains", "Equals", "Starts with", "Ends with", ">=", "<=", ">", "<"]
+        )
+        value_edit = QLineEdit()
+        value_edit.setPlaceholderText("Value")
+        return column_dropdown, condition_dropdown, value_edit
+
+    def create_filter_button(self):
+        filter_button = QPushButton("Apply Filter")
+        filter_button.clicked.connect(self.filter_data)
+        return filter_button
+
+    def create_table_widget(self):
+        table_widget = QTableWidget(self)
+        table_widget.setSortingEnabled(True)
+        return table_widget
+
+    def create_filter_layout(self):
+        filter_layout = QHBoxLayout()
+        filter_layout.addWidget(QLabel("Filter Column:"))
+        filter_layout.addWidget(self.column_dropdown)
+        filter_layout.addWidget(QLabel("Condition:"))
+        filter_layout.addWidget(self.condition_dropdown)
+        filter_layout.addWidget(QLabel("Value:"))
+        filter_layout.addWidget(self.value_edit)
+        filter_layout.addWidget(self.filter_button)
+        return filter_layout
+
+    def set_window_size_limits(self):
+        self.min_width, self.min_height = 400, 300
+        self.max_width, self.max_height = 1200, 800
         self.setMinimumSize(self.min_width, self.min_height)
         self.setMaximumSize(self.max_width, self.max_height)
+
+    def setup_context_menu(self):
+        self.table_widget.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.table_widget.customContextMenuRequested.connect(self.show_context_menu)
+
+    def show_context_menu(self, pos: QPoint):
+        item = self.table_widget.itemAt(pos)
+        if item is not None:
+            column_index = item.column()
+            column_name = self.df.columns[column_index]
+
+            context_menu = QMenu(self)
+            if self.df[column_name].dtype == "object":
+                context_menu.addMenu(self.create_one_hot_menu(column_name))
+            elif self.df[column_name].isnull().any():
+                context_menu.addMenu(self.create_impute_menu(column_name))
+            context_menu.exec_(self.table_widget.mapToGlobal(pos))
+
+    def create_one_hot_menu(self, column_name):
+        one_hot_menu = QMenu(f"One-hot encode '{column_name}'", self)
+        one_hot_menu.addAction(
+            "Create N distinct columns",
+            lambda: self.apply_one_hot_encoding(column_name, n_distinct=True),
+        )
+        one_hot_menu.addAction(
+            "Create N-1 distinct columns",
+            lambda: self.apply_one_hot_encoding(column_name, n_distinct=False),
+        )
+        return one_hot_menu
+
+    def create_impute_menu(self, column_name):
+        impute_menu = QMenu("Impute Missing Values", self)
+        impute_menu.addAction(
+            "Impute with mean", lambda: self.impute_missing_values(column_name, "mean")
+        )
+        impute_menu.addAction(
+            "Impute with median",
+            lambda: self.impute_missing_values(column_name, "median"),
+        )
+        return impute_menu
 
     def load_csv(self):
         options = QFileDialog.Options()
@@ -103,52 +173,82 @@ class CSVInteractiveApp(QWidget):
             self.df = pd.read_csv(csv_file)
             logging.info(f"CSV file read successfully: {csv_file}")
 
+            errors = validate_csv(self.df)
+            self.show_errors(errors)
+
             self.column_dropdown.clear()
             self.column_dropdown.addItems(self.df.columns)
 
-            self.table_widget.setRowCount(self.df.shape[0])
-            self.table_widget.setColumnCount(self.df.shape[1])
-            self.table_widget.setHorizontalHeaderLabels(self.df.columns)
-
-            for row in range(self.df.shape[0]):
-                for col in range(self.df.shape[1]):
-                    item = QTableWidgetItem(str(self.df.iat[row, col]))
-                    self.table_widget.setItem(row, col, item)
-
+            self.update_table(self.df)
             logging.info("CSV data displayed in the table.")
             self.adjust_window_size()
         except Exception as e:
             self.show_error_message("Error loading CSV file", str(e))
             logging.error(f"Error loading CSV file: {e}")
 
+    def apply_one_hot_encoding(self, column_name, n_distinct=True):
+        """Apply one-hot encoding and update the DataFrame and table."""
+        try:
+            logging.info(f"One-hot encoding column: {column_name}")
+            self.df = one_hot_encode(self.df, column_name, n_distinct)
+            self.update_table(self.df)
+            self.column_dropdown.clear()
+            self.column_dropdown.addItems(self.df.columns)
+            logging.info(f"One-hot encoding completed for column: {column_name}")
+        except ValueError as e:
+            self.show_error_message("Error", str(e))
+
+    def impute_missing_values(self, column_name, method):
+        try:
+            logging.info(f"Imputing missing values for column: {column_name}")
+            self.df = impute_values(self.df, column_name, method)
+            self.update_table(self.df)
+            logging.info(f"Imputed missing values for column: {column_name}")
+        except ValueError as e:
+            self.show_error_message("Error", str(e))
+
+    def show_errors(self, errors):
+        if errors:
+            error_message = "\n".join(errors)
+            self.show_error_message("CSV Validation Errors", error_message)
+        else:
+            self.error_label.clear()
+
+    def show_ml_menu(self):
+        self.ml_menu.exec_(
+            self.ml_button.mapToGlobal(self.ml_button.rect().bottomLeft())
+        )
+
+    def toggle_ml_method(self, action, checked):
+        if checked:
+            logging.info(f"Selected ML method: {action.text()}")
+        else:
+            logging.info(f"Deselected ML method: {action.text()}")
+
     def adjust_window_size(self):
         """Adjust the window size based on the table contents."""
         try:
-            # Calculate required size based on table dimensions
             row_count = self.table_widget.rowCount()
             column_count = self.table_widget.columnCount()
 
             if row_count == 0 or column_count == 0:
-                return  # No data to display
+                return
 
-            # Get font metrics for calculating size
             font_metrics = QFontMetrics(self.table_widget.font())
-            row_height = font_metrics.height() + 10  # Row height with padding
+            row_height = font_metrics.height() + 10
             column_widths = [
                 font_metrics.width(self.table_widget.horizontalHeaderItem(col).text())
                 + 20
                 for col in range(column_count)
             ]
 
-            # Calculate the total height and width
             total_height = (
                 row_count * row_height
                 + self.table_widget.horizontalHeader().height()
                 + 50
-            )  # Header + some padding
-            total_width = sum(column_widths) + 30  # Some padding
+            )
+            total_width = sum(column_widths) + 30
 
-            # Set new geometry, ensuring it stays within limits
             new_width = max(self.min_width, min(total_width, self.max_width))
             new_height = max(self.min_height, min(total_height, self.max_height))
 
