@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 from PyQt5.QtWidgets import QApplication
 
-from gui.sample_gui import CSVInteractiveApp
+from gui.gui import CSVInteractiveApp
 
 
 class TestCSVInteractiveApp(unittest.TestCase):

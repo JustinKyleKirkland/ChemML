@@ -2,7 +2,7 @@ import sys
 
 from PyQt5.QtWidgets import QApplication
 
-from gui.sample_gui import CSVInteractiveApp  # Import your main GUI class
+from gui.gui import CSVInteractiveApp  # Import your main GUI class
 from utils.logging_config import setup_logging  # Import your logging setup function
 
 

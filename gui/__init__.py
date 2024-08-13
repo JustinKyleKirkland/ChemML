@@ -1,1 +1,1 @@
-from . import sample_gui
+from . import gui
