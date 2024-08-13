@@ -12,6 +12,10 @@ def one_hot_encode(df, column_name, n_distinct=True):
         drop_first=not n_distinct,
     )
 
+    for column in one_hot_encoded_df.columns:
+        if one_hot_encoded_df[column].dtype == "bool":
+            one_hot_encoded_df[column] = one_hot_encoded_df[column].astype(int)
+
     return one_hot_encoded_df
 
 
