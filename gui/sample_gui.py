@@ -6,6 +6,7 @@ from PyQt5.QtWidgets import (
     QApplication,
     QComboBox,
     QFileDialog,
+    QLineEdit,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -24,7 +25,6 @@ class CSVInteractiveApp(QWidget):
         ml_dropdown (QComboBox): A dropdown menu for selecting machine learning algorithms.
         load_button (QPushButton): A button for loading a CSV file.
         table_widget (QTableWidget): A table widget for displaying the CSV data.
-        image_path (str): The path to save the generated image.
 
     Methods:
         __init__(): Initializes the CSVInteractiveApp.
@@ -45,22 +45,30 @@ class CSVInteractiveApp(QWidget):
 
         self.layout = QVBoxLayout()
 
+        # Machine Learning Algorithm Dropdown
+        # TODO: Make these actually link to something
         self.ml_dropdown = QComboBox()
         self.ml_dropdown.addItems(["Random Forest", "Logistic Regression", "SVM"])
         self.layout.addWidget(self.ml_dropdown)
 
+        # Load CSV button
         self.load_button = QPushButton("Load CSV")
         self.load_button.clicked.connect(self.load_csv)
         self.layout.addWidget(self.load_button)
 
+        # Filter input
+        self.filter_edit = QLineEdit(self)
+        self.filter_edit.setPlaceholderText("Filter")
+        self.filter_edit.textChanged.connect(self.filter_data)
+        self.layout.addWidget(self.filter_edit)
+
+        # Table widget
         self.table_widget = QTableWidget(self)
+        self.table_widget.setSortingEnabled(True)
         self.layout.addWidget(self.table_widget)
 
         self.setLayout(self.layout)
-
         self.setAcceptDrops(True)
-
-        self.image_path = "csv_image.png"
 
     def load_csv(self):
         options = QFileDialog.Options()
@@ -71,7 +79,6 @@ class CSVInteractiveApp(QWidget):
             logging.info(f"Loading CSV file: {file_name}")
             self.display_csv_image(file_name)
         else:
-            print("test1")
             logging.info("No file selected")
 
     def display_csv_image(self, csv_file):
@@ -91,6 +98,25 @@ class CSVInteractiveApp(QWidget):
             logging.info("CSV data displayed in the table.")
         except Exception as e:
             logging.error(f"Error loading CSV file: {e}")
+
+    def filter_data(self):
+        filter_text = self.filter_edit.text().lower()
+        filtered_df = self.df[
+            self.df.apply(
+                lambda row: row.astype(str).str.contains(filter_text).any(), axis=1
+            )
+        ]
+
+        self.table_widget.setRowCount(filtered_df.shape[0])
+        self.table_widget.setColumnCount(filtered_df.shape[1])
+        self.table_widget.setHorizontalHeaderLabels(filtered_df.columns)
+
+        for row in range(filtered_df.shape[0]):
+            for col in range(filtered_df.shape[1]):
+                item = QTableWidgetItem(str(filtered_df.iat[row, col]))
+                self.table_widget.setItem(row, col, item)
+
+        logging.info(f"Filtered data displayed in the table: {filter_text}")
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():

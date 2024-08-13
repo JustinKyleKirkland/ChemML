@@ -2,7 +2,11 @@ import logging
 import os
 
 
-def setup_logging(log_level=logging.INFO):
+def setup_logging():
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
     # Create a logs directory if it doesn't exist
     os.makedirs("logs", exist_ok=True)
 
@@ -11,7 +15,7 @@ def setup_logging(log_level=logging.INFO):
 
     # Create a custom logger
     logger = logging.getLogger("CSVInteractiveApp")
-    logger.setLevel(log_level)
+    # logger.setLevel(log_level)
 
     # Check if handlers already exist to avoid duplicates
     if not logger.handlers:
@@ -22,12 +26,12 @@ def setup_logging(log_level=logging.INFO):
 
         # Create a file handler
         file_handler = logging.FileHandler(log_file_path)
-        file_handler.setLevel(log_level)
+        # file_handler.setLevel(log_level)
         file_handler.setFormatter(formatter)
 
         # Create a console handler
         console_handler = logging.StreamHandler()
-        console_handler.setLevel(log_level)
+        # console_handler.setLevel(log_level)
         console_handler.setFormatter(formatter)
 
         # Add the handlers to the logger
