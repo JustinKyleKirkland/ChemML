@@ -42,5 +42,5 @@ def impute_values(df: pd.DataFrame, column_name: str, method: str = "mean"):
     if method not in ["mean", "median"]:
         raise ValueError("Invalid imputation method")
 
-    df[column_name].fillna(imputed_value, inplace=True)
+    df.fillna({column_name: imputed_value}, inplace=True)
     return df
