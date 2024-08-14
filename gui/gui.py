@@ -1,7 +1,9 @@
+import io
 import logging
 import sys
 
 import pandas as pd
+from PIL import Image
 from PyQt5.QtCore import QPoint, Qt
 from PyQt5.QtGui import QFontMetrics
 from PyQt5.QtWidgets import (
@@ -20,8 +22,11 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from rdkit import Chem
+from rdkit.Chem import Draw
 
 from utils.data_utils import impute_values, one_hot_encode, validate_csv
+from utils.gui_utils import pil_image_to_pixmap
 from utils.logging_config import setup_logging
 from utils.plotting_utils import PlottingWidget
 
@@ -31,7 +36,9 @@ class CSVInteractiveApp(QWidget):
         super().__init__()
 
         self.logger = logging.getLogger("CSVInteractiveApp")
-        self.df = pd.DataFrame()
+        self.df = pd.DataFrame()  # Initialize the DataFrame
+        self.undo_stack = []  # Stack to store DataFrame history
+        self.redo_stack = []  # Stack to store undone DataFrame history
 
         self.setWindowTitle("ChemML")
         self.setAcceptDrops(True)
@@ -120,16 +127,74 @@ class CSVInteractiveApp(QWidget):
 
     def show_context_menu(self, pos: QPoint):
         item = self.table_widget.itemAt(pos)
+
         if item is not None:
             column_index = item.column()
             column_name = self.df.columns[column_index]
 
             context_menu = QMenu(self)
+            context_menu.addAction("Undo", self.undo)
+            context_menu.addAction("Redo", self.redo)
+
             if self.df[column_name].dtype == "object":
                 context_menu.addMenu(self.create_one_hot_menu(column_name))
+                context_menu.addAction(
+                    "Visualize Molecule", lambda: self.visualize_chemdraw(item.text())
+                )
             elif self.df[column_name].isnull().any():
                 context_menu.addMenu(self.create_impute_menu(column_name))
+
+            context_menu.addAction("Copy", self.copy_selected_values)
             context_menu.exec_(self.table_widget.mapToGlobal(pos))
+
+    def visualize_chemdraw(self, smiles: str):
+        if self.is_valid_smiles(smiles):
+            mol = Chem.MolFromSmiles(smiles)
+            img = Draw.MolToImage(mol)
+
+            print(f"SMILES: {smiles}")
+            if mol is None:
+                print("Invalid SMILES string.")
+
+            img_byte_array = io.BytesIO()
+            img.save(img_byte_array, format="PNG")
+            img_byte_array.seek(0)
+
+            self.show_image_popup(img_byte_array)
+        else:
+            self.show_error_message("Invalid SMILES", "Invalid SMILES string.")
+
+    def is_valid_smiles(self, smiles: str):
+        mol = Chem.MolFromSmiles(smiles)
+        return mol is not None
+
+    def show_image_popup(self, img_byte_array):
+        img = Image.open(img_byte_array)
+        img_pixmap = pil_image_to_pixmap(img)
+
+        img_label = QLabel()
+        img_label.setPixmap(img_pixmap)
+
+        popup = QWidget()
+        popup.setWindowTitle("ChemDraw Visualization")
+        layout = QVBoxLayout()
+        layout.addWidget(img_label)
+        popup.setLayout(layout)
+
+        print(f"Image size: {img.size}")
+        print(f"Pixmap size: {img_pixmap.size()}")
+
+        popup.resize(img_pixmap.width(), img_pixmap.height())
+        main_window_rect = self.geometry()
+
+        popup_x = main_window_rect.x() + (main_window_rect.width() - popup.width()) // 2
+        popup_y = (
+            main_window_rect.y() + (main_window_rect.height() - popup.height()) // 2
+        )
+        popup.move(popup_x, popup_y)
+        popup.setAttribute(Qt.WA_DeleteOnClose)
+
+        popup.show()
 
     def create_one_hot_menu(self, column_name):
         one_hot_menu = QMenu(f"One-hot encode '{column_name}'", self)
@@ -185,9 +250,28 @@ class CSVInteractiveApp(QWidget):
             self.show_error_message("Error loading CSV file", str(e))
             logging.error(f"Error loading CSV file: {e}")
 
+    def undo(self):
+        if self.undo_stack:
+            self.redo_stack.append(self.df.copy())
+            self.df = self.undo_stack.pop()
+            self.update_table(self.df)
+            self.column_dropdown.clear()
+            self.column_dropdown.addItems(self.df.columns)
+
+    def redo(self):
+        if self.redo_stack:
+            self.undo_stack.append(self.df.copy())
+            self.df = self.redo_stack.pop()
+            self.update_table(self.df)
+            self.column_dropdown.clear()
+            self.column_dropdown.addItems(self.df.columns)
+
     def apply_one_hot_encoding(self, column_name, n_distinct=True):
         """Apply one-hot encoding and update the DataFrame and table."""
         try:
+            self.undo_stack.append(self.df.copy())
+            self.redo_stack.clear()
+
             logging.info(f"One-hot encoding column: {column_name}")
             self.df = one_hot_encode(self.df, column_name, n_distinct)
             self.update_table(self.df)
@@ -200,6 +284,9 @@ class CSVInteractiveApp(QWidget):
     def impute_missing_values(self, column_name, method):
         """Impute missing values for the specified column."""
         try:
+            self.undo_stack.append(self.df.copy())
+            self.redo_stack.clear()
+
             logging.info(f"Imputing missing values for column: {column_name}")
             self.df = impute_values(self.df, column_name, method)
             self.update_table(self.df)
@@ -271,7 +358,10 @@ class CSVInteractiveApp(QWidget):
             if column and condition and value:
                 logging.info(f"Applying filter: {column} {condition} {value}")
                 filtered_df = operations.get(condition, lambda df: df)(self.df)
+                self.undo_stack.append(self.df.copy())
+                self.redo_stack.clear()
                 self.update_table(filtered_df)
+                logging.info("Filtered data displayed in the table.")
             else:
                 raise ValueError("Invalid filter inputs.")
         except Exception as e:
@@ -295,7 +385,24 @@ class CSVInteractiveApp(QWidget):
                 item = QTableWidgetItem(str(df.iat[row, col]))
                 self.table_widget.setItem(row, col, item)
 
-        logging.info("Filtered data displayed in the table.")
+    # TODO: Get it to actually copy correctly
+    def copy_selected_values(self):
+        clipboard = QApplication.clipboard()
+        selected_items = self.table_widget.selectedItems()
+
+        if selected_items:
+            copied_text = ""
+
+            for item in selected_items:
+                copied_text += item.text() + "\t"
+                if item.column() == self.table_widget.columnCount() - 1:
+                    copied_text = copied_text[:-1] + "\n"
+            clipboard.setText(copied_text.strip())
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_C and (event.modifiers() & Qt.ControlModifier):
+            self.copy_selected_values()
+        super().keyPressEvent(event)
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():

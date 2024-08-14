@@ -19,9 +19,9 @@ class TestDataUtils(unittest.TestCase):
         expected = pd.DataFrame(
             {
                 "Value": [1, 2, None, 4],
-                "Category_B": [False, True, False, False],
-                "Category_C": [False, False, True, False],
-                "Category_D": [False, False, False, True],
+                "Category_B": [0, 1, 0, 0],
+                "Category_C": [0, 0, 1, 0],
+                "Category_D": [0, 0, 0, 1],
             }
         )
         print(result)
@@ -32,10 +32,10 @@ class TestDataUtils(unittest.TestCase):
         expected = pd.DataFrame(
             {
                 "Value": [1, 2, None, 4],
-                "Category_A": [True, False, False, False],
-                "Category_B": [False, True, False, False],
-                "Category_C": [False, False, True, False],
-                "Category_D": [False, False, False, True],
+                "Category_A": [1, 0, 0, 0],
+                "Category_B": [0, 1, 0, 0],
+                "Category_C": [0, 0, 1, 0],
+                "Category_D": [0, 0, 0, 1],
             }
         )
         print(result)
