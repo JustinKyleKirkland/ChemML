@@ -16,12 +16,14 @@ from PyQt5.QtWidgets import (
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from utils.data_utils import impute_values, one_hot_encode, validate_csv
 from utils.logging_config import setup_logging
+from utils.plotting_utils import PlottingWidget
 
 
 class CSVInteractiveApp(QWidget):
@@ -35,6 +37,25 @@ class CSVInteractiveApp(QWidget):
         self.setAcceptDrops(True)
 
         self.layout = QVBoxLayout()
+
+        # Create a tab widget to hold the table and plotting tab
+        self.tab_widget = QTabWidget()
+        original_view_tab = self.create_original_view()
+        self.tab_widget.addTab(original_view_tab, "Original View")
+
+        self.tab_widget.addTab(self.create_plot_tab(), "Plot Data")  # Add plot tab
+
+        self.layout.addWidget(self.tab_widget)
+        # self.layout.addWidget(self.table_widget)
+        self.setLayout(self.layout)
+
+        self.set_window_size_limits()
+        self.setup_context_menu()
+
+    def create_original_view(self):
+        original_view = QWidget()
+        original_layout = QVBoxLayout()
+
         self.error_label = self.create_error_label()
         self.ml_button, self.ml_menu = self.create_ml_button()
         self.load_button = self.create_load_button()
@@ -44,15 +65,14 @@ class CSVInteractiveApp(QWidget):
         self.filter_button = self.create_filter_button()
         self.table_widget = self.create_table_widget()
 
-        self.layout.addWidget(self.error_label)
-        self.layout.addWidget(self.ml_button)
-        self.layout.addWidget(self.load_button)
-        self.layout.addLayout(self.create_filter_layout())
-        self.layout.addWidget(self.table_widget)
-        self.setLayout(self.layout)
+        original_layout.addWidget(self.table_widget)
+        original_layout.addWidget(self.error_label)
+        original_layout.addWidget(self.ml_button)
+        original_layout.addWidget(self.load_button)
+        original_layout.addLayout(self.create_filter_layout())
 
-        self.set_window_size_limits()
-        self.setup_context_menu()
+        original_view.setLayout(original_layout)
+        return original_view
 
     def create_error_label(self):
         error_label = QLabel()
@@ -175,6 +195,8 @@ class CSVInteractiveApp(QWidget):
 
             errors = validate_csv(self.df)
             self.show_errors(errors)
+
+            self.tab_widget.widget(1).update_data(self.df)
 
             self.column_dropdown.clear()
             self.column_dropdown.addItems(self.df.columns)
@@ -326,6 +348,12 @@ class CSVInteractiveApp(QWidget):
 
     def closeEvent(self, event):
         event.accept()
+
+    # Plotting Utilities
+
+    def create_plot_tab(self):
+        plot_tab = PlottingWidget(self.df)
+        return plot_tab
 
 
 if __name__ == "__main__":
