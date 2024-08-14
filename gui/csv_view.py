@@ -3,7 +3,7 @@ from typing import List, Tuple
 
 import pandas as pd
 from PyQt5.QtCore import QPoint, Qt, pyqtSignal
-from PyQt5.QtGui import QFontMetrics
+from PyQt5.QtGui import QBrush, QColor, QFontMetrics
 from PyQt5.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -143,6 +143,7 @@ class CSVView(QWidget):
             self.df = self.undo_stack.pop()
             self.update_table(self.df)
             self.update_column_dropdown()
+            self.data_ready.emit(self.df)
             self.show_errors(validate_csv(self.df))
             logging.info("Undo operation completed.")
         else:
@@ -155,6 +156,7 @@ class CSVView(QWidget):
             self.df = self.redo_stack.pop()
             self.update_table(self.df)
             self.update_column_dropdown()
+            self.data_ready.emit(self.df)
             self.show_errors(validate_csv(self.df))
             logging.info("Redo operation completed.")
         else:
@@ -285,9 +287,15 @@ class CSVView(QWidget):
         self.table_widget.setColumnCount(len(df.columns))
         self.table_widget.setHorizontalHeaderLabels(df.columns)
 
-        for row_index, row in df.iterrows():
-            for col_index, value in enumerate(row):
-                item = QTableWidgetItem(str(value))
+        for col_index, column in enumerate(df.columns):
+            has_nan = df[column].isnull().any()  # Check if the column has any NaN values
+
+            for row_index in range(len(df)):
+                item = QTableWidgetItem(str(df.at[row_index, column]))
+
+                if has_nan:
+                    item.setBackground(QBrush(QColor(99, 7, 39)))  # Dark red color for the entire column
+
                 self.table_widget.setItem(row_index, col_index, item)
 
         self.table_widget.resizeColumnsToContents()
