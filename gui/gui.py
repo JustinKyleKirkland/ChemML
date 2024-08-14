@@ -31,22 +31,17 @@ class CSVInteractiveApp(QWidget):
         super().__init__()
 
         self.logger = logging.getLogger("CSVInteractiveApp")
-        self.df = pd.DataFrame()  # Initialize the DataFrame
+        self.df = pd.DataFrame()
 
         self.setWindowTitle("ChemML")
         self.setAcceptDrops(True)
 
         self.layout = QVBoxLayout()
-
-        # Create a tab widget to hold the table and plotting tab
         self.tab_widget = QTabWidget()
-        original_view_tab = self.create_original_view()
-        self.tab_widget.addTab(original_view_tab, "Original View")
-
-        self.tab_widget.addTab(self.create_plot_tab(), "Plot Data")  # Add plot tab
+        self.tab_widget.addTab(self.create_original_view(), "CSV View")
+        self.tab_widget.addTab(self.create_plot_tab(), "Plot Data")
 
         self.layout.addWidget(self.tab_widget)
-        # self.layout.addWidget(self.table_widget)
         self.setLayout(self.layout)
 
         self.set_window_size_limits()
@@ -57,7 +52,6 @@ class CSVInteractiveApp(QWidget):
         original_layout = QVBoxLayout()
 
         self.error_label = self.create_error_label()
-        self.ml_button, self.ml_menu = self.create_ml_button()
         self.load_button = self.create_load_button()
         self.column_dropdown, self.condition_dropdown, self.value_edit = (
             self.create_filter_widgets()
@@ -67,7 +61,6 @@ class CSVInteractiveApp(QWidget):
 
         original_layout.addWidget(self.table_widget)
         original_layout.addWidget(self.error_label)
-        original_layout.addWidget(self.ml_button)
         original_layout.addWidget(self.load_button)
         original_layout.addLayout(self.create_filter_layout())
 
@@ -78,22 +71,6 @@ class CSVInteractiveApp(QWidget):
         error_label = QLabel()
         error_label.setStyleSheet("color: red")
         return error_label
-
-    def create_ml_button(self):
-        ml_button = QPushButton("Select ML Methods")
-        ml_button.setCheckable(True)
-        ml_menu = QMenu(ml_button)
-
-        for method in ["Random Forest", "Logistic Regression", "SVM"]:
-            action = ml_menu.addAction(method)
-            action.setCheckable(True)
-            action.triggered.connect(
-                lambda checked, a=action: self.toggle_ml_method(a, checked)
-            )
-
-        ml_button.clicked.connect(self.show_ml_menu)
-        ml_button.setMenu(ml_menu)  # Set the menu to the button
-        return ml_button, ml_menu
 
     def create_load_button(self):
         load_button = QPushButton("Load CSV")
@@ -221,6 +198,7 @@ class CSVInteractiveApp(QWidget):
             self.show_error_message("Error", str(e))
 
     def impute_missing_values(self, column_name, method):
+        """Impute missing values for the specified column."""
         try:
             logging.info(f"Imputing missing values for column: {column_name}")
             self.df = impute_values(self.df, column_name, method)
@@ -235,17 +213,6 @@ class CSVInteractiveApp(QWidget):
             self.show_error_message("CSV Validation Errors", error_message)
         else:
             self.error_label.clear()
-
-    def show_ml_menu(self):
-        self.ml_menu.exec_(
-            self.ml_button.mapToGlobal(self.ml_button.rect().bottomLeft())
-        )
-
-    def toggle_ml_method(self, action, checked):
-        if checked:
-            logging.info(f"Selected ML method: {action.text()}")
-        else:
-            logging.info(f"Deselected ML method: {action.text()}")
 
     def adjust_window_size(self):
         """Adjust the window size based on the table contents."""
@@ -348,8 +315,6 @@ class CSVInteractiveApp(QWidget):
 
     def closeEvent(self, event):
         event.accept()
-
-    # Plotting Utilities
 
     def create_plot_tab(self):
         plot_tab = PlottingWidget(self.df)
