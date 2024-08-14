@@ -16,12 +16,14 @@ from PyQt5.QtWidgets import (
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from utils.data_utils import impute_values, one_hot_encode, validate_csv
 from utils.logging_config import setup_logging
+from utils.plotting_utils import PlottingWidget
 
 
 class CSVInteractiveApp(QWidget):
@@ -29,14 +31,29 @@ class CSVInteractiveApp(QWidget):
         super().__init__()
 
         self.logger = logging.getLogger("CSVInteractiveApp")
-        self.df = pd.DataFrame()  # Initialize the DataFrame
+        self.df = pd.DataFrame()
+        self.undo_stack = []
+        self.redo_stack = []
 
         self.setWindowTitle("ChemML")
         self.setAcceptDrops(True)
 
         self.layout = QVBoxLayout()
+        self.tab_widget = QTabWidget()
+        self.tab_widget.addTab(self.create_original_view(), "CSV View")
+        self.tab_widget.addTab(self.create_plot_tab(), "Plot Data")
+
+        self.layout.addWidget(self.tab_widget)
+        self.setLayout(self.layout)
+
+        self.set_window_size_limits()
+        self.setup_context_menu()
+
+    def create_original_view(self):
+        original_view = QWidget()
+        original_layout = QVBoxLayout()
+
         self.error_label = self.create_error_label()
-        self.ml_button, self.ml_menu = self.create_ml_button()
         self.load_button = self.create_load_button()
         self.column_dropdown, self.condition_dropdown, self.value_edit = (
             self.create_filter_widgets()
@@ -44,36 +61,18 @@ class CSVInteractiveApp(QWidget):
         self.filter_button = self.create_filter_button()
         self.table_widget = self.create_table_widget()
 
-        self.layout.addWidget(self.error_label)
-        self.layout.addWidget(self.ml_button)
-        self.layout.addWidget(self.load_button)
-        self.layout.addLayout(self.create_filter_layout())
-        self.layout.addWidget(self.table_widget)
-        self.setLayout(self.layout)
+        original_layout.addWidget(self.table_widget)
+        original_layout.addWidget(self.error_label)
+        original_layout.addWidget(self.load_button)
+        original_layout.addLayout(self.create_filter_layout())
 
-        self.set_window_size_limits()
-        self.setup_context_menu()
+        original_view.setLayout(original_layout)
+        return original_view
 
     def create_error_label(self):
         error_label = QLabel()
         error_label.setStyleSheet("color: red")
         return error_label
-
-    def create_ml_button(self):
-        ml_button = QPushButton("Select ML Methods")
-        ml_button.setCheckable(True)
-        ml_menu = QMenu(ml_button)
-
-        for method in ["Random Forest", "Logistic Regression", "SVM"]:
-            action = ml_menu.addAction(method)
-            action.setCheckable(True)
-            action.triggered.connect(
-                lambda checked, a=action: self.toggle_ml_method(a, checked)
-            )
-
-        ml_button.clicked.connect(self.show_ml_menu)
-        ml_button.setMenu(ml_menu)  # Set the menu to the button
-        return ml_button, ml_menu
 
     def create_load_button(self):
         load_button = QPushButton("Load CSV")
@@ -123,15 +122,21 @@ class CSVInteractiveApp(QWidget):
 
     def show_context_menu(self, pos: QPoint):
         item = self.table_widget.itemAt(pos)
+
         if item is not None:
             column_index = item.column()
             column_name = self.df.columns[column_index]
 
             context_menu = QMenu(self)
+            context_menu.addAction("Undo", self.undo)
+            context_menu.addAction("Redo", self.redo)
+
             if self.df[column_name].dtype == "object":
                 context_menu.addMenu(self.create_one_hot_menu(column_name))
             elif self.df[column_name].isnull().any():
                 context_menu.addMenu(self.create_impute_menu(column_name))
+
+            context_menu.addAction("Copy", self.copy_selected_values)
             context_menu.exec_(self.table_widget.mapToGlobal(pos))
 
     def create_one_hot_menu(self, column_name):
@@ -176,6 +181,9 @@ class CSVInteractiveApp(QWidget):
             errors = validate_csv(self.df)
             self.show_errors(errors)
 
+            self.tab_widget.widget(1).update_data(self.df)
+            # self.tab_widget.widget(1).update_plot()
+
             self.column_dropdown.clear()
             self.column_dropdown.addItems(self.df.columns)
 
@@ -186,9 +194,28 @@ class CSVInteractiveApp(QWidget):
             self.show_error_message("Error loading CSV file", str(e))
             logging.error(f"Error loading CSV file: {e}")
 
+    def undo(self):
+        if self.undo_stack:
+            self.redo_stack.append(self.df.copy())
+            self.df = self.undo_stack.pop()
+            self.update_table(self.df)
+            self.column_dropdown.clear()
+            self.column_dropdown.addItems(self.df.columns)
+
+    def redo(self):
+        if self.redo_stack:
+            self.undo_stack.append(self.df.copy())
+            self.df = self.redo_stack.pop()
+            self.update_table(self.df)
+            self.column_dropdown.clear()
+            self.column_dropdown.addItems(self.df.columns)
+
     def apply_one_hot_encoding(self, column_name, n_distinct=True):
         """Apply one-hot encoding and update the DataFrame and table."""
         try:
+            self.undo_stack.append(self.df.copy())
+            self.redo_stack.clear()
+
             logging.info(f"One-hot encoding column: {column_name}")
             self.df = one_hot_encode(self.df, column_name, n_distinct)
             self.update_table(self.df)
@@ -199,7 +226,11 @@ class CSVInteractiveApp(QWidget):
             self.show_error_message("Error", str(e))
 
     def impute_missing_values(self, column_name, method):
+        """Impute missing values for the specified column."""
         try:
+            self.undo_stack.append(self.df.copy())
+            self.redo_stack.clear()
+
             logging.info(f"Imputing missing values for column: {column_name}")
             self.df = impute_values(self.df, column_name, method)
             self.update_table(self.df)
@@ -213,17 +244,6 @@ class CSVInteractiveApp(QWidget):
             self.show_error_message("CSV Validation Errors", error_message)
         else:
             self.error_label.clear()
-
-    def show_ml_menu(self):
-        self.ml_menu.exec_(
-            self.ml_button.mapToGlobal(self.ml_button.rect().bottomLeft())
-        )
-
-    def toggle_ml_method(self, action, checked):
-        if checked:
-            logging.info(f"Selected ML method: {action.text()}")
-        else:
-            logging.info(f"Deselected ML method: {action.text()}")
 
     def adjust_window_size(self):
         """Adjust the window size based on the table contents."""
@@ -282,7 +302,10 @@ class CSVInteractiveApp(QWidget):
             if column and condition and value:
                 logging.info(f"Applying filter: {column} {condition} {value}")
                 filtered_df = operations.get(condition, lambda df: df)(self.df)
+                self.undo_stack.append(self.df.copy())
+                self.redo_stack.clear()
                 self.update_table(filtered_df)
+                logging.info("Filtered data displayed in the table.")
             else:
                 raise ValueError("Invalid filter inputs.")
         except Exception as e:
@@ -306,7 +329,24 @@ class CSVInteractiveApp(QWidget):
                 item = QTableWidgetItem(str(df.iat[row, col]))
                 self.table_widget.setItem(row, col, item)
 
-        logging.info("Filtered data displayed in the table.")
+    # TODO: Get it to actually copy correctly
+    def copy_selected_values(self):
+        clipboard = QApplication.clipboard()
+        selected_items = self.table_widget.selectedItems()
+
+        if selected_items:
+            copied_text = ""
+
+            for item in selected_items:
+                copied_text += item.text() + "\t"
+                if item.column() == self.table_widget.columnCount() - 1:
+                    copied_text = copied_text[:-1] + "\n"
+            clipboard.setText(copied_text.strip())
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_C and (event.modifiers() & Qt.ControlModifier):
+            self.copy_selected_values()
+        super().keyPressEvent(event)
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
@@ -326,6 +366,10 @@ class CSVInteractiveApp(QWidget):
 
     def closeEvent(self, event):
         event.accept()
+
+    def create_plot_tab(self):
+        plot_tab = PlottingWidget(self.df)
+        return plot_tab
 
 
 if __name__ == "__main__":
