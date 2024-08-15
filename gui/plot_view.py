@@ -184,9 +184,7 @@ class PlottingWidget(QDialog):
             self.df[y_column],
             marker=self.marker_type_combo.currentText(),
             s=self.marker_size_slider.value(),
-            color=self.marker_color.name()
-            if isinstance(self.marker_color, QColor)
-            else "black",
+            color=self.marker_color.name() if isinstance(self.marker_color, QColor) else "black",
         )
 
         if self.line_fit_checkbox.isChecked():
@@ -195,9 +193,7 @@ class PlottingWidget(QDialog):
             plt.plot(
                 self.df[x_column],
                 p(self.df[x_column]),
-                color=self.line_fit_color.name()
-                if isinstance(self.line_fit_color, QColor)
-                else "red",
+                color=self.line_fit_color.name() if isinstance(self.line_fit_color, QColor) else "red",
                 linewidth=self.line_thickness_slider.value(),
                 linestyle=self.get_line_style(),
             )
@@ -207,9 +203,7 @@ class PlottingWidget(QDialog):
                     np.sum((self.df[y_column] - p(self.df[x_column])) ** 2)
                     / np.sum((self.df[y_column] - np.mean(self.df[y_column])) ** 2)
                 )
-                plt.text(
-                    0.1, 0.9, f"R² = {r_squared:.2f}", transform=plt.gca().transAxes
-                )
+                plt.text(0.1, 0.9, f"R² = {r_squared:.2f}", transform=plt.gca().transAxes)
 
         plt.xlabel(x_column)
         plt.ylabel(y_column)

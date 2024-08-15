@@ -332,7 +332,20 @@ class CSVView(QWidget):
         elif condition == "Ends with":
             return self.df[self.df[column_name].str.endswith(value)]
         elif condition in (">=", "<=", ">", "<"):
-            return self.df[self.df[column_name].astype(float).eval(f"{condition} {float(value)}")]
+            try:
+                numeric_column = self.df[column_name].astype(float)
+                numeric_value = float(value)
+            except ValueError as e:
+                raise ValueError(f"Could not convert column '{column_name}' or value '{value}' to float: {e}")
+
+            if condition == ">=":
+                return self.df[numeric_column >= numeric_value]
+            elif condition == "<=":
+                return self.df[numeric_column <= numeric_value]
+            elif condition == ">":
+                return self.df[numeric_column > numeric_value]
+            elif condition == "<":
+                return self.df[numeric_column < numeric_value]
         else:
             raise ValueError("Invalid filter condition")
 
@@ -342,8 +355,6 @@ class CSVView(QWidget):
             logging.warning("No cells selected to copy.")
             self.show_error_message("Copy Error", "No cells selected to copy.")
             return
-
-        # Implement copy logic here (if needed)
 
     def show_error_message(self, title: str, message: str) -> None:
         error_dialog = QMessageBox()
