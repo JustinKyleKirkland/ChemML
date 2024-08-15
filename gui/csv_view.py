@@ -24,6 +24,53 @@ from utils.data_utils import impute_values, one_hot_encode, validate_csv
 
 
 class CSVView(QWidget):
+    """
+    A widget for viewing and manipulating CSV data.
+
+    Signals:
+        data_ready: A signal emitted when the CSV data is ready to be processed.
+
+    Attributes:
+        tab_widget (QTabWidget): The parent tab widget.
+        logger (logging.Logger): The logger for CSVView.
+        df (pd.DataFrame): The DataFrame containing the CSV data.
+        undo_stack (List[pd.DataFrame]): The stack for storing previous DataFrame states for undo operation.
+        redo_stack (List[pd.DataFrame]): The stack for storing undone DataFrame states for redo operation.
+        layout (QVBoxLayout): The layout for the widget.
+        error_label (QLabel): The label for displaying error messages.
+        load_button (QPushButton): The button for loading a CSV file.
+        column_dropdown (QComboBox): The dropdown for selecting a column for filtering.
+        condition_dropdown (QComboBox): The dropdown for selecting a condition for filtering.
+        value_edit (QLineEdit): The text field for entering a value for filtering.
+        filter_button (QPushButton): The button for applying a filter.
+        table_widget (QTableWidget): The table widget for displaying the CSV data.
+
+    Methods:
+        create_error_label() -> QLabel:
+
+        create_load_button() -> QPushButton:
+
+        create_filter_widgets() -> Tuple[QComboBox, QComboBox, QLineEdit]:
+
+        create_filter_button() -> QPushButton:
+
+        create_table_widget() -> QTableWidget:
+
+        create_filter_layout() -> QHBoxLayout:
+
+        load_csv() -> None:
+
+        display_csv_image(csv_file: str) -> None:
+
+        undo() -> None:
+
+        redo() -> None:
+
+        apply_one_hot_encoding(column_name: str, n_distinct: bool = True) -> None:
+
+        impute_missing_values(column_name: str, strategy: str) -> None:
+    """
+
     data_ready = pyqtSignal(pd.DataFrame)
 
     def __init__(self, tab_widget: QTabWidget) -> None:
@@ -37,7 +84,6 @@ class CSVView(QWidget):
         self.set_window_size_limits()
         self.layout = QVBoxLayout()
 
-        # Initialize widgets
         self.error_label = self.create_error_label()
         self.load_button = self.create_load_button()
         self.column_dropdown, self.condition_dropdown, self.value_edit = self.create_filter_widgets()
@@ -47,7 +93,6 @@ class CSVView(QWidget):
         self.table_widget.customContextMenuRequested.connect(self.show_context_menu)
         self.setup_context_menu()
 
-        # Arrange layout
         self.layout.addWidget(self.table_widget)
         self.layout.addWidget(self.error_label)
         self.layout.addWidget(self.load_button)
@@ -57,18 +102,37 @@ class CSVView(QWidget):
         logging.info("CSVView initialized successfully.")
 
     def create_error_label(self) -> QLabel:
+        """
+        Creates and returns an error label widget.
+
+        Returns:
+            QLabel: The created error label widget.
+        """
         logging.debug("Creating error label widget.")
         error_label = QLabel()
         error_label.setStyleSheet("color: red")
         return error_label
 
     def create_load_button(self) -> QPushButton:
+        """
+        Creates a QPushButton widget for loading a CSV file.
+
+        Returns:
+            QPushButton: The created load button widget.
+        """
         logging.debug("Creating load button widget.")
         load_button = QPushButton("Load CSV")
         load_button.clicked.connect(self.load_csv)
         return load_button
 
     def create_filter_widgets(self) -> Tuple[QComboBox, QComboBox, QLineEdit]:
+        """
+        Creates filter widgets.
+
+        Returns:
+            Tuple[QComboBox, QComboBox, QLineEdit]: A tuple containing the column dropdown, condition dropdown,
+            and value edit widgets.
+        """
         logging.debug("Creating filter widgets.")
         column_dropdown = QComboBox()
         condition_dropdown = QComboBox()
@@ -78,18 +142,38 @@ class CSVView(QWidget):
         return column_dropdown, condition_dropdown, value_edit
 
     def create_filter_button(self) -> QPushButton:
+        """
+        Creates a QPushButton widget for applying a filter.
+
+        Returns:
+            QPushButton: The created filter button widget.
+        """
         logging.debug("Creating filter button widget.")
         filter_button = QPushButton("Apply Filter")
         filter_button.clicked.connect(self.filter_data)
         return filter_button
 
     def create_table_widget(self) -> QTableWidget:
+        """
+        Creates and returns a QTableWidget object.
+
+        Returns:
+            QTableWidget: The created QTableWidget object.
+        """
         logging.debug("Creating table widget.")
         table_widget = QTableWidget(self)
         table_widget.setSortingEnabled(True)
         return table_widget
 
     def create_filter_layout(self) -> QHBoxLayout:
+        """
+        Creates and returns a QHBoxLayout for the filter layout.
+
+        Returns:
+            QHBoxLayout: The filter layout containing the filter column dropdown, condition dropdown,
+                         value edit, and filter button.
+        """
+        pass
         logging.debug("Creating filter layout.")
         filter_layout = QHBoxLayout()
         filter_layout.addWidget(QLabel("Filter Column:"))
@@ -102,6 +186,12 @@ class CSVView(QWidget):
         return filter_layout
 
     def load_csv(self) -> None:
+        """
+        Loads a CSV file and displays its contents.
+
+        Returns:
+            None
+        """
         logging.info("Load CSV button clicked.")
         options = QFileDialog.Options()
         file_name, _ = QFileDialog.getOpenFileName(self, "Open CSV File", "", "CSV Files (*.csv)", options=options)
@@ -113,6 +203,15 @@ class CSVView(QWidget):
             logging.info("No file selected")
 
     def display_csv_image(self, csv_file: str) -> None:
+        """
+        Display the CSV file as an image in the GUI.
+
+        Args:
+            csv_file (str): The path to the CSV file.
+
+        Returns:
+            None
+        """
         try:
             logging.info(f"Reading CSV file: {csv_file}")
             self.df = pd.read_csv(csv_file)
@@ -120,8 +219,6 @@ class CSVView(QWidget):
 
             errors = validate_csv(self.df)
             self.show_errors(errors)
-
-            # self.tab_widget.widget(1).update_data(self.df)
 
             self.data_ready.emit(self.df)
 
@@ -137,6 +234,15 @@ class CSVView(QWidget):
             logging.error(f"Error loading CSV file '{csv_file}': {e}")
 
     def undo(self) -> None:
+        """
+        Undo the last operation.
+
+        This method pops the last operation from the undo stack and applies it to the dataframe.
+        If the undo stack is empty, nothing is done.
+
+        Returns:
+            None
+        """
         logging.info("Undo operation triggered.")
         if self.undo_stack:
             self.redo_stack.append(self.df.copy())
@@ -150,6 +256,15 @@ class CSVView(QWidget):
             logging.info("Undo stack is empty; nothing to undo.")
 
     def redo(self) -> None:
+        """
+        Redoes the last undone operation.
+
+        This method pops the last operation from the redo stack and applies it to the data frame.
+        If the redo stack is empty, nothing is done.
+
+        Returns:
+            None
+        """
         logging.info("Redo operation triggered.")
         if self.redo_stack:
             self.undo_stack.append(self.df.copy())
@@ -163,6 +278,21 @@ class CSVView(QWidget):
             logging.info("Redo stack is empty; nothing to redo.")
 
     def apply_one_hot_encoding(self, column_name: str, n_distinct: bool = True) -> None:
+        """
+        Apply one-hot encoding to a specified column in the DataFrame.
+
+        Args:
+            column_name (str): The name of the column to apply one-hot encoding to.
+            n_distinct (bool, optional): Whether to use the 'n_distinct' parameter in the one-hot encoding function.
+                Defaults to True.
+
+        Returns:
+            None
+
+        Raises:
+            ValueError: If an error occurs during the one-hot encoding process.
+
+        """
         logging.info(f"Applying one-hot encoding to column: {column_name}")
         try:
             self.undo_stack.append(self.df.copy())
@@ -174,7 +304,6 @@ class CSVView(QWidget):
 
             self.data_ready.emit(self.df)
 
-            # Check for null values in new columns
             new_columns_with_nulls = [col for col in self.df.columns if self.df[col].isnull().any()]
             if new_columns_with_nulls:
                 warning_msg = (
@@ -189,6 +318,20 @@ class CSVView(QWidget):
             logging.error(f"Error in one-hot encoding: {e}")
 
     def impute_missing_values(self, column_name: str, strategy: str) -> None:
+        """
+        Imputes missing values in a specific column of the DataFrame using a specified strategy.
+
+        Args:
+            column_name (str): The name of the column to impute missing values.
+            strategy (str): The imputation strategy to use.
+
+        Returns:
+            None
+
+        Raises:
+            ValueError: If an error occurs during the imputation process.
+
+        """
         logging.info(f"Imputing missing values for column: {column_name} using {strategy}")
         try:
             self.undo_stack.append(self.df.copy())
@@ -196,8 +339,6 @@ class CSVView(QWidget):
 
             self.df = impute_values(self.df, column_name, strategy)
 
-            # Debug: Log the state of the DataFrame column after imputation
-            logging.debug(f"Post-imputation, {column_name} column data:\n{self.df[column_name]}")
             self.update_table(self.df)
             self.update_column_dropdown()
 
@@ -215,6 +356,15 @@ class CSVView(QWidget):
             logging.error(f"Error in imputing missing values: {e}")
 
     def show_errors(self, errors: List[str]) -> None:
+        """
+        Display validation errors in the CSV data.
+
+        Args:
+            errors (List[str]): A list of validation errors.
+
+        Returns:
+            None
+        """
         if errors:
             logging.warning("Validation errors found in CSV data.")
             self.error_label.setText("\n".join(errors))
@@ -223,6 +373,21 @@ class CSVView(QWidget):
             logging.info("No validation errors found.")
 
     def adjust_window_size(self) -> None:
+        """
+        Adjusts the window size based on the content of the table.
+
+        This method calculates the required height and width of the window based on the number of rows and columns
+        in the table.
+        It takes into account the height of each row, the width of each column,
+        and the maximum allowed height and width.
+        The window is then resized to the calculated dimensions.
+
+        Raises:
+            Exception: If there is an error while adjusting the window size.
+
+        Returns:
+            None
+        """
         try:
             logging.debug("Adjusting window size based on table content.")
             row_count = self.table_widget.rowCount()
@@ -232,10 +397,7 @@ class CSVView(QWidget):
                 logging.warning("No data to adjust window size.")
                 return
 
-            # Calculate the height needed for all rows
-            row_height = (
-                max(self.table_widget.verticalHeader().sectionSize(i) for i in range(row_count)) + 10
-            )  # Extra padding
+            row_height = max(self.table_widget.verticalHeader().sectionSize(i) for i in range(row_count)) + 10
 
             font_metrics = QFontMetrics(self.font())
             total_column_width = sum(
@@ -244,11 +406,9 @@ class CSVView(QWidget):
                     for row_index in range(row_count)
                 )
                 for col in range(column_count)
-            ) + (column_count * 75)  # Add padding for each column
+            ) + (column_count * 75)
 
-            new_height = min(
-                self.max_height, row_count * row_height + 10
-            )  # Add some extra height for the header and margins
+            new_height = min(self.max_height, row_count * row_height + 10)
             new_width = min(self.max_width, total_column_width)
 
             self.resize(max(self.min_width, new_width), max(self.min_height, new_height))
@@ -258,6 +418,15 @@ class CSVView(QWidget):
             logging.error(f"Failed to adjust window size: {e}")
 
     def create_impute_menu(self, column_name: str) -> QMenu:
+        """
+        Creates a QMenu for imputing missing values in a specific column.
+
+        Args:
+            column_name (str): The name of the column to impute missing values for.
+
+        Returns:
+            QMenu: The created QMenu for imputing missing values.
+        """
         logging.debug(f"Creating impute menu for column: {column_name}.")
         impute_menu = QMenu("Impute Missing Values", self)
         impute_menu.addAction("Impute with mean", lambda: self.impute_missing_values(column_name, "mean"))
@@ -268,6 +437,15 @@ class CSVView(QWidget):
         return impute_menu
 
     def create_one_hot_menu(self, column_name: str) -> QMenu:
+        """
+        Creates a one-hot encode menu for the specified column.
+
+        Args:
+            column_name (str): The name of the column to be one-hot encoded.
+
+        Returns:
+            QMenu: The created one-hot encode menu.
+        """
         logging.debug(f"Creating one-hot encode menu for column: {column_name}.")
         one_hot_menu = QMenu(f"One-hot encode '{column_name}'", self)
         one_hot_menu.addAction(
@@ -281,6 +459,15 @@ class CSVView(QWidget):
         return one_hot_menu
 
     def update_table(self, df: pd.DataFrame) -> None:
+        """
+        Update the table widget with new data from a DataFrame.
+
+        Args:
+            df (pd.DataFrame): The DataFrame containing the new data.
+
+        Returns:
+            None
+        """
         logging.debug("Updating table with new data.")
         self.table_widget.clear()
         self.table_widget.setRowCount(len(df))
@@ -288,13 +475,13 @@ class CSVView(QWidget):
         self.table_widget.setHorizontalHeaderLabels(df.columns)
 
         for col_index, column in enumerate(df.columns):
-            has_nan = df[column].isnull().any()  # Check if the column has any NaN values
+            has_nan = df[column].isnull().any()
 
             for row_index in range(len(df)):
                 item = QTableWidgetItem(str(df.at[row_index, column]))
 
                 if has_nan:
-                    item.setBackground(QBrush(QColor(99, 7, 39)))  # Dark red color for the entire column
+                    item.setBackground(QBrush(QColor(99, 7, 39)))
 
                 self.table_widget.setItem(row_index, col_index, item)
 
@@ -302,6 +489,33 @@ class CSVView(QWidget):
         logging.info("Table updated successfully.")
 
     def filter_data(self) -> None:
+        """
+        Apply a filter to the data based on the selected column, condition, and value.
+
+        Returns:
+            None
+
+        Raises:
+            Exception: If an error occurs while applying the filter.
+
+        Warnings:
+            If the filter criteria are missing, a warning is logged and an error message is displayed.
+
+        Logging:
+            - Logs the filter being applied with the selected column, condition, and value.
+            - Logs an error if an exception occurs while applying the filter.
+            - Logs a warning if the filter criteria are missing.
+
+        Stack:
+            - Appends a copy of the current DataFrame to the undo stack.
+            - Clears the redo stack.
+
+        Table Update:
+            - Updates the table with the filtered DataFrame.
+
+        Error Handling:
+            - Displays an error message if an exception occurs while applying the filter.
+        """
         column_name = self.column_dropdown.currentText()
         condition = self.condition_dropdown.currentText()
         value = self.value_edit.text()
@@ -323,6 +537,23 @@ class CSVView(QWidget):
             self.show_error_message("Invalid Filter", "Please select a column, condition, and value.")
 
     def apply_filter(self, column_name: str, condition: str, value: str) -> pd.DataFrame:
+        """
+        Apply a filter to the DataFrame based on the given column name, condition, and value.
+
+        Parameters:
+            column_name (str): The name of the column to filter on.
+            condition (str): The condition to apply for the filter. Valid options are "Contains", "Equals",
+            "Starts with", "Ends with", ">=", "<=", ">", "<".
+            value (str): The value to compare against for the filter.
+
+        Returns:
+            pd.DataFrame: The filtered DataFrame.
+
+        Raises:
+            ValueError: If an invalid filter condition is provided or if the column or value cannot be converted
+            to float when using numeric conditions.
+
+        """
         if condition == "Contains":
             return self.df[self.df[column_name].str.contains(value)]
         elif condition == "Equals":
@@ -350,6 +581,15 @@ class CSVView(QWidget):
             raise ValueError("Invalid filter condition")
 
     def copy_selected_values(self) -> None:
+        """
+        Copies the selected values from the table widget.
+
+        Returns:
+            None
+
+        Raises:
+            None
+        """
         selected_items = self.table_widget.selectedItems()
         if not selected_items:
             logging.warning("No cells selected to copy.")
@@ -357,6 +597,16 @@ class CSVView(QWidget):
             return
 
     def show_error_message(self, title: str, message: str) -> None:
+        """
+        Display an error message dialog box.
+
+        Parameters:
+        - title (str): The title of the error dialog box.
+        - message (str): The error message to be displayed.
+
+        Returns:
+        - None
+        """
         error_dialog = QMessageBox()
         error_dialog.setIcon(QMessageBox.Critical)
         error_dialog.setWindowTitle(title)
@@ -365,6 +615,12 @@ class CSVView(QWidget):
         logging.error(f"Error dialog shown - Title: '{title}', Message: '{message}'")
 
     def set_window_size_limits(self) -> None:
+        """
+        Sets the minimum and maximum size limits for the window.
+
+        Returns:
+            None
+        """
         logging.info("Setting window size limits.")
         self.min_width, self.min_height = 400, 300
         self.max_width, self.max_height = 1200, 800
@@ -372,10 +628,28 @@ class CSVView(QWidget):
         self.setMaximumSize(self.max_width, self.max_height)
 
     def setup_context_menu(self) -> None:
+        """
+        Sets up the context menu for the table widget.
+
+        This method sets the context menu policy of the table widget to Qt.CustomContextMenu,
+        allowing the widget to display a custom context menu when the user right-clicks on it.
+
+        Returns:
+            None
+        """
         logging.debug("Setting up context menu for table widget.")
         self.table_widget.setContextMenuPolicy(Qt.CustomContextMenu)
 
     def show_context_menu(self, pos: QPoint) -> None:
+        """
+        Displays a context menu at the given position.
+
+        Args:
+            pos (QPoint): The position where the context menu is requested.
+
+        Returns:
+            None
+        """
         logging.debug(f"Context menu requested at position: {pos}.")
         item = self.table_widget.itemAt(pos)
 
@@ -397,5 +671,11 @@ class CSVView(QWidget):
             context_menu.exec_(self.table_widget.mapToGlobal(pos))
 
     def update_column_dropdown(self) -> None:
+        """
+        Updates the column dropdown menu with the columns of the DataFrame.
+
+        Returns:
+            None
+        """
         self.column_dropdown.clear()
         self.column_dropdown.addItems(self.df.columns)

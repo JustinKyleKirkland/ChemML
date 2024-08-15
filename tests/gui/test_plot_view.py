@@ -3,7 +3,7 @@ import pytest
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QColor
 
-from utils.plotting_utils import PlottingWidget
+from gui.plot_view import PlottingWidget
 
 
 @pytest.fixture
