@@ -8,6 +8,7 @@ from PyQt5.QtWidgets import (
     QColorDialog,
     QComboBox,
     QDialog,
+    QHBoxLayout,
     QLabel,
     QPushButton,
     QSlider,
@@ -15,52 +16,84 @@ from PyQt5.QtWidgets import (
 )
 
 
+class MarkerOptionsDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        self.setWindowTitle("Marker Options")
+        self.setGeometry(100, 100, 200, 200)
+
+        layout = QVBoxLayout()
+
+        self.marker_type_combo = QComboBox()
+        self.marker_type_combo.addItems(["o", "s", "^", "D"])
+        layout.addWidget(QLabel("Marker Type:"))
+        layout.addWidget(self.marker_type_combo)
+
+        self.marker_color_button = QPushButton("Select Marker Color")
+        self.marker_color_button.clicked.connect(self.select_marker_color)
+        layout.addWidget(self.marker_color_button)
+
+        self.marker_size_slider = QSlider(Qt.Horizontal)
+        self.marker_size_slider.setRange(1, 20)
+        self.marker_size_slider.setValue(5)
+        layout.addWidget(QLabel("Marker Size:"))
+        layout.addWidget(self.marker_size_slider)
+
+        self.marker_color: QColor = Qt.red
+
+        self.setLayout(layout)
+
+    def select_marker_color(self) -> None:
+        color: QColor = QColorDialog.getColor()
+        if color.isValid():
+            self.marker_color = color
+
+
+class LineFitOptionsDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        self.setWindowTitle("Line of Best Fit Options")
+        self.setGeometry(100, 100, 200, 200)
+
+        layout = QVBoxLayout()
+
+        self.line_fit_checkbox = QCheckBox("Add Line of Best Fit")
+        layout.addWidget(self.line_fit_checkbox)
+
+        self.r_squared_checkbox = QCheckBox("Calculate R²")
+        layout.addWidget(self.r_squared_checkbox)
+
+        self.line_fit_color_button = QPushButton("Select Line of Best Fit Color")
+        self.line_fit_color_button.clicked.connect(self.select_line_fit_color)
+        layout.addWidget(self.line_fit_color_button)
+
+        self.line_thickness_slider = QSlider(Qt.Horizontal)
+        self.line_thickness_slider.setRange(1, 10)
+        self.line_thickness_slider.setValue(2)
+        layout.addWidget(QLabel("Line Thickness:"))
+        layout.addWidget(self.line_thickness_slider)
+
+        self.line_type_combo = QComboBox()
+        self.line_type_combo.addItems(["Solid", "Dashed", "Dotted", "DashDot"])
+        layout.addWidget(QLabel("Line Type:"))
+        layout.addWidget(self.line_type_combo)
+
+        self.line_fit_color: QColor = Qt.black
+
+        self.setLayout(layout)
+
+    def select_line_fit_color(self) -> None:
+        color: QColor = QColorDialog.getColor()
+        if color.isValid():
+            self.line_fit_color = color
+
+
 class PlottingWidget(QDialog):
     current_plot: plt.Figure | None = None
 
     def __init__(self, df: pd.DataFrame) -> None:
-        """
-        Initializes the PlotDataWindow class.
-
-        Parameters:
-        - df: pandas.DataFrame
-            The DataFrame containing the data to be plotted.
-
-        Attributes:
-        - df: pandas.DataFrame
-            The DataFrame containing the data to be plotted.
-        - marker_color: QColor
-            The color of the markers.
-        - line_fit_color: QColor
-            The color of the line of best fit.
-        - timer: QTimer
-            The timer used to update the plot.
-        - layout: QVBoxLayout
-            The layout of the window.
-        - plot_button: QPushButton
-            The button used to plot the data.
-        - x_combo: QComboBox
-            The combo box used to select the X data.
-        - y_combo: QComboBox
-            The combo box used to select the Y data.
-        - marker_type_combo: QComboBox
-            The combo box used to select the marker type.
-        - marker_color_button: QPushButton
-            The button used to select the marker color.
-        - marker_size_slider: QSlider
-            The slider used to select the marker size.
-        - line_fit_checkbox: QCheckBox
-            The checkbox used to add a line of best fit.
-        - r_squared_checkbox: QCheckBox
-            The checkbox used to calculate R².
-        - line_fit_color_button: QPushButton
-            The button used to select the line of best fit color.
-        - line_thickness_slider: QSlider
-            The slider used to select the line thickness.
-        - line_type_combo: QComboBox
-            The combo box used to select the line type.
-        """
-
         super().__init__()
 
         self.df: pd.DataFrame = df
@@ -84,69 +117,43 @@ class PlottingWidget(QDialog):
         self.layout.addWidget(QLabel("Select Y Data:"))
         self.layout.addWidget(self.y_combo)
 
-        self.marker_type_combo = QComboBox()
-        self.marker_type_combo.addItems(["o", "s", "^", "D"])
+        # Add the plot options label
+        plot_options_label = QLabel("----- Plot Options -----")
+        plot_options_label.setAlignment(Qt.AlignCenter)
+        self.layout.addWidget(plot_options_label)
 
-        self.layout.addWidget(QLabel("Marker Type:"))
-        self.layout.addWidget(self.marker_type_combo)
+        # Create a horizontal layout for the buttons
+        buttons_layout = QHBoxLayout()
 
-        self.marker_color_button = QPushButton("Select Marker Color")
-        self.marker_color_button.clicked.connect(self.select_marker_color)
-        self.layout.addWidget(self.marker_color_button)
+        # Marker Options Button
+        self.marker_options_button = QPushButton("Marker Options")
+        self.marker_options_button.clicked.connect(self.open_marker_options_dialog)
+        buttons_layout.addWidget(self.marker_options_button)
 
-        self.marker_size_slider = QSlider(Qt.Horizontal)
-        self.marker_size_slider.setRange(1, 20)
-        self.marker_size_slider.setValue(5)
+        # Line of Best Fit Options Button
+        self.line_fit_options_button = QPushButton("Line of Best Fit Options")
+        self.line_fit_options_button.clicked.connect(self.open_line_fit_options_dialog)
+        buttons_layout.addWidget(self.line_fit_options_button)
 
-        self.layout.addWidget(QLabel("Marker Size:"))
-        self.layout.addWidget(self.marker_size_slider)
-
-        self.line_fit_checkbox = QCheckBox("Add Line of Best Fit")
-        self.r_squared_checkbox = QCheckBox("Calculate R²")
-
-        self.layout.addWidget(self.line_fit_checkbox)
-        self.layout.addWidget(self.r_squared_checkbox)
-
-        self.line_fit_color_button = QPushButton("Select Line of Best Fit Color")
-        self.line_fit_color_button.clicked.connect(self.select_line_fit_color)
-        self.layout.addWidget(self.line_fit_color_button)
-
-        self.line_thickness_slider = QSlider(Qt.Horizontal)
-        self.line_thickness_slider.setRange(1, 10)
-        self.line_thickness_slider.setValue(2)
-        self.layout.addWidget(QLabel("Line Thickness:"))
-        self.layout.addWidget(self.line_thickness_slider)
-
-        self.line_type_combo = QComboBox()
-        self.line_type_combo.addItems(["Solid", "Dashed", "Dotted", "DashDot"])
-        self.layout.addWidget(QLabel("Line Type:"))
-        self.layout.addWidget(self.line_type_combo)
+        # Add the horizontal layout to the main layout
+        self.layout.addLayout(buttons_layout)
 
         self.setLayout(self.layout)
-
-        self.marker_color: QColor = Qt.black
-        self.line_fit_color: QColor = Qt.red
 
         self.timer: QTimer = QTimer(self)
         self.timer.timeout.connect(self.update_plot)
 
-        self.marker_size_slider.valueChanged.connect(self.start_timer)
-        self.line_thickness_slider.valueChanged.connect(self.start_timer)
+        # Initialize dialogs
+        self.marker_options_dialog = MarkerOptionsDialog(self)
+        self.line_fit_options_dialog = LineFitOptionsDialog(self)
+
+    def open_marker_options_dialog(self) -> None:
+        self.marker_options_dialog.exec_()
+
+    def open_line_fit_options_dialog(self) -> None:
+        self.line_fit_options_dialog.exec_()
 
     def plot_data(self) -> None:
-        """
-        Plot the data.
-
-        This method creates a new plot and updates it with the current data.
-        If there is an existing plot, it is closed before creating a new one.
-
-        Parameters:
-            None
-
-        Returns:
-            None
-        """
-
         if PlottingWidget.current_plot is not None:
             plt.close(PlottingWidget.current_plot)
 
@@ -158,22 +165,6 @@ class PlottingWidget(QDialog):
         self.timer.start(200)
 
     def update_plot(self) -> None:
-        """
-        Update the plot with the selected data columns and options.
-
-        This method clears the current plot and creates a new scatter plot based on the selected x and y columns.
-        The marker type, size, and color are determined by the corresponding combo boxes and sliders.
-        If the line fit checkbox is checked, a linear regression line is fitted to the data and plotted.
-        The line color, thickness, and style are determined by the corresponding options.
-        If the R-squared checkbox is checked, the coefficient of determination (R-squared) is calculated and displayed
-        on the plot.
-
-        Parameters:
-        - self: The instance of the class.
-
-        Returns:
-        - None
-        """
         plt.clf()
 
         x_column: str = self.x_combo.currentText()
@@ -182,23 +173,27 @@ class PlottingWidget(QDialog):
         plt.scatter(
             self.df[x_column],
             self.df[y_column],
-            marker=self.marker_type_combo.currentText(),
-            s=self.marker_size_slider.value(),
-            color=self.marker_color.name() if isinstance(self.marker_color, QColor) else "black",
+            marker=self.marker_options_dialog.marker_type_combo.currentText(),
+            s=self.marker_options_dialog.marker_size_slider.value(),
+            color=self.marker_options_dialog.marker_color.name()
+            if isinstance(self.marker_options_dialog.marker_color, QColor)
+            else "black",
         )
 
-        if self.line_fit_checkbox.isChecked():
+        if self.line_fit_options_dialog.line_fit_checkbox.isChecked():
             z = np.polyfit(self.df[x_column], self.df[y_column], 1)
             p = np.poly1d(z)
             plt.plot(
                 self.df[x_column],
                 p(self.df[x_column]),
-                color=self.line_fit_color.name() if isinstance(self.line_fit_color, QColor) else "red",
-                linewidth=self.line_thickness_slider.value(),
+                color=self.line_fit_options_dialog.line_fit_color.name()
+                if isinstance(self.line_fit_options_dialog.line_fit_color, QColor)
+                else "red",
+                linewidth=self.line_fit_options_dialog.line_thickness_slider.value(),
                 linestyle=self.get_line_style(),
             )
 
-            if self.r_squared_checkbox.isChecked():
+            if self.line_fit_options_dialog.r_squared_checkbox.isChecked():
                 r_squared = 1 - (
                     np.sum((self.df[y_column] - p(self.df[x_column])) ** 2)
                     / np.sum((self.df[y_column] - np.mean(self.df[y_column])) ** 2)
@@ -211,64 +206,18 @@ class PlottingWidget(QDialog):
         plt.draw()
 
     def start_timer(self) -> None:
-        """
-        Starts the timer if it is not already active.
-
-        Parameters:
-            None
-
-        Returns:
-            None
-        """
         if not self.timer.isActive():
             self.timer.start(100)
 
     def update_data(self, df: pd.DataFrame) -> None:
-        """
-        Update the data in the plotting utility.
-
-        Parameters:
-        - df: pandas.DataFrame
-            The new data to be used for plotting.
-
-        Returns:
-        None
-        """
         self.df = df
         self.x_combo.clear()
         self.y_combo.clear()
         self.x_combo.addItems(self.df.columns)
         self.y_combo.addItems(self.df.columns)
 
-    def select_marker_color(self) -> None:
-        """
-        Opens a color dialog to allow the user to select a marker color.
-        The selected color is stored in the `marker_color` attribute of the object.
-
-        Returns:
-            None
-        """
-        color: QColor = QColorDialog.getColor()
-        if color.isValid():
-            self.marker_color = color
-
-    def select_line_fit_color(self) -> None:
-        """
-        Opens a color dialog to allow the user to select a color for the line fit.
-        If a valid color is selected, it is stored in the `line_fit_color` attribute.
-        """
-        color: QColor = QColorDialog.getColor()
-        if color.isValid():
-            self.line_fit_color = color
-
     def get_line_style(self) -> str:
-        """
-        Get the line style based on the selected line type.
-
-        Returns:
-            str: The line style for plotting.
-        """
-        line_type: str = self.line_type_combo.currentText()
+        line_type: str = self.line_fit_options_dialog.line_type_combo.currentText()
         if line_type == "Dashed":
             return "--"
         elif line_type == "Dotted":
