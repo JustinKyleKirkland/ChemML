@@ -90,6 +90,8 @@ class CSVView(QWidget):
         self.filter_button = self.create_filter_button()
         self.table_widget = self.create_table_widget()
 
+        self.impute_button = self.create_impute_button()
+
         self.table_widget.customContextMenuRequested.connect(self.show_context_menu)
         self.setup_context_menu()
 
@@ -97,9 +99,79 @@ class CSVView(QWidget):
         self.layout.addWidget(self.error_label)
         self.layout.addWidget(self.load_button)
         self.layout.addLayout(self.create_filter_layout())
+        self.layout.addWidget(self.impute_button)
         self.setLayout(self.layout)
 
         logging.info("CSVView initialized successfully.")
+
+    def create_impute_button(self) -> QPushButton:
+        """
+        Creates a QPushButton widget for imputing missing values.
+
+        Returns:
+            QPushButton: The created impute button widget.
+        """
+        logging.debug("Creating impute button widget.")
+        impute_button = QPushButton("Impute Missing Values")
+        impute_button.clicked.connect(self.show_impute_options)
+        return impute_button
+
+    def show_impute_options(self) -> None:
+        """
+        Displays a message box with options to impute missing values.
+
+        Returns:
+            None
+        """
+        logging.debug("Showing impute options.")
+
+        # Create the message box for options
+        msg_box = QMessageBox()
+        msg_box.setWindowTitle("Impute Missing Values")
+        msg_box.setText("Choose a strategy to impute all NaN values:")
+
+        # Add buttons for mean and median
+        mean_button = msg_box.addButton("Impute with Mean", QMessageBox.ActionRole)
+        median_button = msg_box.addButton("Impute with Median", QMessageBox.ActionRole)
+
+        # Show the message box and get the user's selection
+        msg_box.exec_()
+
+        # Determine which button was clicked and call the appropriate method
+        if msg_box.clickedButton() == mean_button:
+            self.impute_missing_values_all("mean")
+        elif msg_box.clickedButton() == median_button:
+            self.impute_missing_values_all("median")
+
+    def impute_missing_values_all(self, strategy: str) -> None:
+        """
+        Imputes missing values for all columns in the DataFrame using the specified strategy.
+
+        Parameters:
+            strategy (str): The imputation strategy to use.
+
+        Returns:
+            None
+        """
+        logging.info(f"Imputing missing values for all columns using {strategy}")
+        try:
+            self.undo_stack.append(self.df.copy())
+            self.redo_stack.clear()
+
+            for column in self.df.columns:
+                if self.df[column].isnull().any():
+                    self.df = impute_values(self.df, column, strategy)
+
+            self.update_table(self.df)
+            self.update_column_dropdown()
+
+            self.data_ready.emit(self.df)
+            self.show_errors(validate_csv(self.df))
+
+            logging.info(f"Missing values imputed for all columns using {strategy}")
+        except ValueError as e:
+            self.show_error_message("Imputation Error", str(e))
+            logging.error(f"Error in imputing missing values: {e}")
 
     def create_error_label(self) -> QLabel:
         """
@@ -476,12 +548,16 @@ class CSVView(QWidget):
 
         for col_index, column in enumerate(df.columns):
             has_nan = df[column].isnull().any()
+            is_numerical = pd.api.types.is_numeric_dtype(df[column])
 
             for row_index in range(len(df)):
                 item = QTableWidgetItem(str(df.at[row_index, column]))
 
                 if has_nan:
                     item.setBackground(QBrush(QColor(99, 7, 39)))
+
+                if not is_numerical:
+                    item.setBackground(QBrush(QColor(0, 102, 204)))
 
                 self.table_widget.setItem(row_index, col_index, item)
 
