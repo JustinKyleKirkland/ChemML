@@ -11,7 +11,9 @@ from PyQt5.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QSizePolicy,
     QSlider,
+    QSpacerItem,
     QVBoxLayout,
 )
 
@@ -102,10 +104,6 @@ class PlottingWidget(QDialog):
 
         self.layout = QVBoxLayout()
 
-        self.plot_button = QPushButton("Plot")
-        self.plot_button.clicked.connect(self.plot_data)
-        self.layout.addWidget(self.plot_button)
-
         self.x_combo = QComboBox()
         self.y_combo = QComboBox()
 
@@ -137,6 +135,19 @@ class PlottingWidget(QDialog):
 
         # Add the horizontal layout to the main layout
         self.layout.addLayout(buttons_layout)
+
+        plot_button_layout = QHBoxLayout()
+        plot_button_layout.addSpacerItem(QSpacerItem(20, 20, QSizePolicy.Expanding, QSizePolicy.Minimum))
+
+        self.plot_button = QPushButton("Plot")
+        self.plot_button.clicked.connect(self.plot_data)
+        self.plot_button.setStyleSheet(
+            "background-color: #007AFF; " "color: white; " "border-radius: 10px; " "padding: 10px; " "border: none; "
+        )
+
+        plot_button_layout.addWidget(self.plot_button)
+
+        self.layout.addLayout(plot_button_layout)
 
         self.setLayout(self.layout)
 
@@ -177,7 +188,7 @@ class PlottingWidget(QDialog):
             s=self.marker_options_dialog.marker_size_slider.value(),
             color=self.marker_options_dialog.marker_color.name()
             if isinstance(self.marker_options_dialog.marker_color, QColor)
-            else "black",
+            else "red",
         )
 
         if self.line_fit_options_dialog.line_fit_checkbox.isChecked():
@@ -188,7 +199,7 @@ class PlottingWidget(QDialog):
                 p(self.df[x_column]),
                 color=self.line_fit_options_dialog.line_fit_color.name()
                 if isinstance(self.line_fit_options_dialog.line_fit_color, QColor)
-                else "red",
+                else "black",
                 linewidth=self.line_fit_options_dialog.line_thickness_slider.value(),
                 linestyle=self.get_line_style(),
             )
