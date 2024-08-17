@@ -4,6 +4,7 @@ import pandas as pd
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import (
     QComboBox,
+    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -14,7 +15,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from ml_backend.ml_backend import run_ml_methods
+from ml_backend.ml_backend import download_results_as_json, run_ml_methods
 
 
 class MLView(QWidget):
@@ -288,25 +289,32 @@ class MLView(QWidget):
             results = run_ml_methods(self.df, target_column, feature_columns, selected_models)
             self.logger.info("ML methods executed successfully.")
 
-            def format_value(value):
-                try:
-                    return f"{float(value):.4f}"
-                except (ValueError, TypeError):
-                    return value
-
-            print(results.items())
-
             result_str = "\n".join(
                 f"{model}:\n"
-                f"  CV Mean Score: {format_value(result['cv_mean_score'])}\n"
-                f"  CV Std Score: {format_value(result['cv_std_score'])}\n"
-                f"  Train MSE: {format_value(result.get('train_mse', 'N/A'))}\n"
-                f"  Test MSE: {format_value(result.get('test_mse', 'N/A'))}\n"
-                f"  Train R2: {format_value(result.get('train_r2', 'N/A'))}\n"
-                f"  Test R2: {format_value(result.get('test_r2', 'N/A'))}\n"
+                f"  CV Mean Score: {result['cv_mean_score']:.4f}\n"
+                f"  CV Std Score: {result['cv_std_score']:.4f}\n"
+                f"  Train MSE: {result.get('train_mse', 'N/A'):.4f}\n"
+                f"  Test MSE: {result.get('test_mse', 'N/A'):.4f}\n"
+                f"  Train R2: {result.get('train_r2', 'N/A'):.4f}\n"
+                f"  Test R2: {result.get('test_r2', 'N/A'):.4f}\n"
+                f"  Best Hyperparameters: {result.get('best_hyperparameters', 'N/A')}\n"
                 for model, result in results.items()
             )
-            QMessageBox.information(self, "ML Results", result_str)
+
+            msg_box = QMessageBox(self)
+            msg_box.setIcon(QMessageBox.Information)
+            msg_box.setWindowTitle("ML Results")
+            msg_box.setText(result_str)
+
+            save_button = msg_box.addButton("Save Results", QMessageBox.ActionRole)
+            msg_box.exec_()
+
+            if msg_box.clickedButton() == save_button:
+                filename, _ = QFileDialog.getSaveFileName(self, "Save Results", "", "JSON Files (*.json)")
+                if filename:
+                    download_results_as_json(results, filename)
+                    self.logger.info(f"Results saved to {filename}")
+
         except Exception as e:
             self.logger.error(f"Error running ML methods: {e}", exc_info=True)
             QMessageBox.critical(self, "Error", f"Error running ML methods: {e}")
