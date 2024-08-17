@@ -756,3 +756,12 @@ class CSVView(QWidget):
         """
         self.column_dropdown.clear()
         self.column_dropdown.addItems(self.df.columns)
+
+    def get_dataframe(self) -> pd.DataFrame:
+        """
+        Returns the DataFrame containing the CSV data.
+
+        Returns:
+            pd.DataFrame: The DataFrame containing the CSV data.
+        """
+        return self.df

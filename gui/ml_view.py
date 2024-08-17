@@ -1,3 +1,5 @@
+import logging
+
 import pandas as pd
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import (
@@ -6,10 +8,13 @@ from PyQt5.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QListWidget,
+    QMessageBox,
     QPushButton,
     QVBoxLayout,
     QWidget,
 )
+
+from ml_backend.ml_backend import run_ml_methods
 
 
 class MLView(QWidget):
@@ -18,6 +23,8 @@ class MLView(QWidget):
 
     def __init__(self) -> None:
         super().__init__()
+        self.logger: logging.Logger = logging.getLogger("MLView")
+        self.df = pd.DataFrame()
 
         self.setWindowTitle("Machine Learning View")
 
@@ -79,6 +86,11 @@ class MLView(QWidget):
         self.h_layout_ml_methods.addLayout(self.left_column_layout)
         self.h_layout_ml_methods.addLayout(self.button_layout)
         self.h_layout_ml_methods.addLayout(self.right_column_layout)
+
+        # Button to run ML methods
+        self.run_ml_button = QPushButton("Run ML Methods")
+        self.run_ml_button.clicked.connect(self.run_ml_methods_clicked)
+        self.h_layout_ml_methods.addWidget(self.run_ml_button)
 
         self.main_layout.addLayout(self.h_layout_ml_methods)
 
@@ -152,7 +164,11 @@ class MLView(QWidget):
         Returns:
             List[str]: A list of selected ML methods.
         """
-        return [item.text() for item in self.selected_methods_list.findItems("*", 0)]
+        selected_models = []
+        for i in range(self.selected_methods_list.count()):
+            item = self.selected_methods_list.item(i)
+            selected_models.append(item.text())
+        return selected_models
 
     def get_target_column(self) -> str:
         """
@@ -170,7 +186,11 @@ class MLView(QWidget):
         Returns:
             List[str]: A list of selected feature columns.
         """
-        return [item.text() for item in self.feature_list.findItems("*", 0)]
+        feature_columns = []
+        for i in range(self.feature_list.count()):
+            item = self.feature_list.item(i)
+            feature_columns.append(item.text())
+        return feature_columns
 
     def set_data_ready_signal(self, receiver) -> None:
         """
@@ -223,3 +243,70 @@ class MLView(QWidget):
             self.feature_list.addItem(self.previous_target_column)
         elif self.previous_target_column == "Select Target Column":
             self.previous_target_column = None
+
+    def set_dataframe(self, df: pd.DataFrame) -> None:
+        """
+        Sets the DataFrame for the ML view.
+
+        Args:
+            df (pd.DataFrame): The DataFrame to be used.
+        """
+        self.df = df
+        self.update_column_selection(df)
+
+    def run_ml_methods_clicked(self) -> None:
+        target_column = self.get_target_column()
+        feature_columns = self.get_feature_columns()
+        selected_models = self.get_selected_models()
+
+        self.logger.info("Running ML methods...")
+        self.logger.info(f"Target Column: {target_column}")
+        self.logger.info(f"Feature Columns: {feature_columns}")
+        self.logger.info(f"Selected Models: {selected_models}")
+
+        if not target_column or target_column == "Select Target Column":
+            self.logger.warning("No target column selected.")
+            QMessageBox.warning(self, "Warning", "Please select a target column.")
+            return
+
+        if not feature_columns:
+            self.logger.warning("No feature columns selected.")
+            QMessageBox.warning(self, "Warning", "Please select feature columns.")
+            return
+
+        if not selected_models:
+            self.logger.warning("No ML methods selected.")
+            QMessageBox.warning(self, "Warning", "Please select machine learning methods.")
+            return
+
+        if self.df.empty:
+            self.logger.warning("No data loaded.")
+            QMessageBox.warning(self, "Warning", "Please load a CSV file.")
+            return
+
+        try:
+            results = run_ml_methods(self.df, target_column, feature_columns, selected_models)
+            self.logger.info("ML methods executed successfully.")
+
+            def format_value(value):
+                try:
+                    return f"{float(value):.4f}"
+                except (ValueError, TypeError):
+                    return value
+
+            print(results.items())
+
+            result_str = "\n".join(
+                f"{model}:\n"
+                f"  CV Mean Score: {format_value(result['cv_mean_score'])}\n"
+                f"  CV Std Score: {format_value(result['cv_std_score'])}\n"
+                f"  Train MSE: {format_value(result.get('train_mse', 'N/A'))}\n"
+                f"  Test MSE: {format_value(result.get('test_mse', 'N/A'))}\n"
+                f"  Train R2: {format_value(result.get('train_r2', 'N/A'))}\n"
+                f"  Test R2: {format_value(result.get('test_r2', 'N/A'))}\n"
+                for model, result in results.items()
+            )
+            QMessageBox.information(self, "ML Results", result_str)
+        except Exception as e:
+            self.logger.error(f"Error running ML methods: {e}", exc_info=True)
+            QMessageBox.critical(self, "Error", f"Error running ML methods: {e}")

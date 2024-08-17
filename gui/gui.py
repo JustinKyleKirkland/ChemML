@@ -35,6 +35,12 @@ class CSVInteractiveApp(QWidget):
         self.csv_view.data_ready.connect(self.plotting_widget.update_data)
         self.csv_view.data_ready.connect(self.ml_view.update_column_selection)
 
+        def on_data_ready(df: pd.DataFrame):
+            # self.ml_view.set_dataframe(self.csv_view.get_dataframe())
+            self.ml_view.set_dataframe(df)
+
+        self.csv_view.data_ready.connect(on_data_ready)
+
         # Set layout
         self.layout.addWidget(self.tab_widget)
         self.setLayout(self.layout)
