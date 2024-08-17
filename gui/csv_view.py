@@ -3,7 +3,7 @@ from typing import List, Tuple
 
 import pandas as pd
 from PyQt5.QtCore import QPoint, Qt, pyqtSignal
-from PyQt5.QtGui import QBrush, QColor, QFontMetrics
+from PyQt5.QtGui import QBrush, QFontMetrics
 from PyQt5.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -20,6 +20,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
+from utils.color_assets import ERROR_COLOR, NAN_COLOR, NON_NUM_COLOR
 from utils.data_utils import impute_values, one_hot_encode, validate_csv
 
 
@@ -182,7 +183,7 @@ class CSVView(QWidget):
         """
         logging.debug("Creating error label widget.")
         error_label = QLabel()
-        error_label.setStyleSheet("color: red")
+        error_label.setStyleSheet(f"color: {ERROR_COLOR.name()}")
         return error_label
 
     def create_load_button(self) -> QPushButton:
@@ -554,10 +555,10 @@ class CSVView(QWidget):
                 item = QTableWidgetItem(str(df.at[row_index, column]))
 
                 if has_nan:
-                    item.setBackground(QBrush(QColor(99, 7, 39)))
+                    item.setBackground(QBrush(NAN_COLOR))
 
                 if not is_numerical:
-                    item.setBackground(QBrush(QColor(0, 102, 204)))
+                    item.setBackground(QBrush(NON_NUM_COLOR))
 
                 self.table_widget.setItem(row_index, col_index, item)
 
@@ -612,6 +613,7 @@ class CSVView(QWidget):
             logging.warning("Filter criteria missing. Please select a column, condition, and value.")
             self.show_error_message("Invalid Filter", "Please select a column, condition, and value.")
 
+    # TODO: Fix filter function
     def apply_filter(self, column_name: str, condition: str, value: str) -> pd.DataFrame:
         """
         Apply a filter to the DataFrame based on the given column name, condition, and value.
@@ -722,29 +724,28 @@ class CSVView(QWidget):
 
         Args:
             pos (QPoint): The position where the context menu is requested.
-
-        Returns:
-            None
         """
-        logging.debug(f"Context menu requested at position: {pos}.")
+        logging.debug(f"Context menu requested at position: {pos}")
         item = self.table_widget.itemAt(pos)
 
-        if item is not None:
-            column_index = item.column()
-            column_name = self.df.columns[column_index]
-            logging.debug(f"Context menu for column: {column_name}.")
+        if not item:
+            return
 
-            context_menu = QMenu(self)
-            context_menu.addAction("Undo", self.undo)
-            context_menu.addAction("Redo", self.redo)
+        column_index = item.column()
+        column_name = self.df.columns[column_index]
+        logging.debug(f"Context menu for column: {column_name}")
 
-            if self.df[column_name].dtype == "object":
-                context_menu.addMenu(self.create_one_hot_menu(column_name))
-            elif self.df[column_name].isnull().any():
-                context_menu.addMenu(self.create_impute_menu(column_name))
+        context_menu = QMenu(self)
+        context_menu.addAction("Undo", self.undo)
+        context_menu.addAction("Redo", self.redo)
 
-            context_menu.addAction("Copy", self.copy_selected_values)
-            context_menu.exec_(self.table_widget.mapToGlobal(pos))
+        if self.df[column_name].dtype == "object":
+            context_menu.addMenu(self.create_one_hot_menu(column_name))
+        elif self.df[column_name].isnull().any():
+            context_menu.addMenu(self.create_impute_menu(column_name))
+
+        context_menu.addAction("Copy", self.copy_selected_values)
+        context_menu.exec_(self.table_widget.mapToGlobal(pos))
 
     def update_column_dropdown(self) -> None:
         """
