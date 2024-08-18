@@ -1,4 +1,6 @@
 import pandas as pd
+from sklearn.experimental import enable_iterative_imputer  # noqa
+from sklearn.impute import IterativeImputer, KNNImputer
 
 
 def one_hot_encode(df, column_name, n_distinct=True):
@@ -38,13 +40,34 @@ def impute_values(df: pd.DataFrame, column_name: str, method: str = "mean"):
     if column_name not in df.columns:
         raise ValueError(f"Column '{column_name}' not found in DataFrame.")
 
-    imputed_value = (
-        df[column_name].mean() if method == "mean" else df[column_name].median()
-    )
+    if method == "mean":
+        imputed_value = df[column_name].mean()
+        df.fillna({column_name: imputed_value}, inplace=True)
+    elif method == "median":
+        imputed_value = df[column_name].median()
+        df.fillna({column_name: imputed_value}, inplace=True)
+    elif method == "knn":
+        if df.select_dtypes(include=["number"]).empty:
+            raise ValueError("No numerical columns found in DataFrame.")
 
-    # Raise an error if the method is invalid
-    if method not in ["mean", "median"]:
+        numerical_df = df.select_dtypes(include=["number"])
+        imputer = KNNImputer(n_neighbors=5)
+        imputed_data = imputer.fit_transform(numerical_df)
+        df.loc[:, numerical_df.columns] = imputed_data
+    elif method == "mice":
+        if df.select_dtypes(include=["number"]).empty:
+            raise ValueError("No numerical columns found in DataFrame.")
+
+        numerical_df = df.select_dtypes(include=["number"])
+        imputer = IterativeImputer(max_iter=10, random_state=0)
+        imputed_data = imputer.fit_transform(numerical_df)
+        df[numerical_df.columns] = imputed_data
+
+    else:
         raise ValueError("Invalid imputation method")
 
-    df.fillna({column_name: imputed_value}, inplace=True)
+    # Raise an error if the method is invalid
+    if method not in ["mean", "median", "knn", "mice"]:
+        raise ValueError("Invalid imputation method")
+
     return df

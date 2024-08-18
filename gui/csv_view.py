@@ -134,6 +134,8 @@ class CSVView(QWidget):
         # Add buttons for mean and median
         mean_button = msg_box.addButton("Impute with Mean", QMessageBox.ActionRole)
         median_button = msg_box.addButton("Impute with Median", QMessageBox.ActionRole)
+        knn_button = msg_box.addButton("Impute with KNN", QMessageBox.ActionRole)
+        mice_button = msg_box.addButton("Impute with MICE", QMessageBox.ActionRole)
 
         # Show the message box and get the user's selection
         msg_box.exec_()
@@ -143,6 +145,10 @@ class CSVView(QWidget):
             self.impute_missing_values_all("mean")
         elif msg_box.clickedButton() == median_button:
             self.impute_missing_values_all("median")
+        elif msg_box.clickedButton() == knn_button:
+            self.impute_missing_values_all("knn")
+        elif msg_box.clickedButton() == mice_button:
+            self.impute_missing_values_all("mice")
 
     def impute_missing_values_all(self, strategy: str) -> None:
         """
@@ -289,6 +295,11 @@ class CSVView(QWidget):
             logging.info(f"Reading CSV file: {csv_file}")
             self.df = pd.read_csv(csv_file)
             logging.info(f"CSV file '{csv_file}' read successfully.")
+
+            int_columns = self.df.select_dtypes(include="int").columns
+            if not int_columns.empty:
+                logging.info(f"Converting integer columns to nullable integers: {int_columns}")
+                self.df[int_columns] = self.df[int_columns].astype(float)
 
             errors = validate_csv(self.df)
             self.show_errors(errors)
@@ -507,6 +518,7 @@ class CSVView(QWidget):
             "Impute with median",
             lambda: self.impute_missing_values(column_name, "median"),
         )
+        impute_menu.addAction("Impute with KNN", lambda: self.impute_missing_values(column_name, "knn"))
         return impute_menu
 
     def create_one_hot_menu(self, column_name: str) -> QMenu:
