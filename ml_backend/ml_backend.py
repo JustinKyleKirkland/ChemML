@@ -1,20 +1,38 @@
 import json
 
 import pandas as pd
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import AdaBoostRegressor, GradientBoostingRegressor, RandomForestRegressor
+from sklearn.linear_model import ElasticNet, Lasso, LinearRegression, Ridge
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.model_selection import GridSearchCV, train_test_split
 from sklearn.neural_network import MLPRegressor
+from sklearn.svm import SVR
 from sklearn.tree import DecisionTreeRegressor
 
 # Mapping of model names to their scikit-learn classes and their hyperparameters for grid search
 MODEL_MAPPING = {
     "Linear Regression": (LinearRegression, {}),
+    "Ridge Regression": (Ridge, {"alpha": [0.1, 1.0, 10.0]}),
+    "Lasso Regression": (Lasso, {"alpha": [0.1, 1.0, 10.0]}),
+    "ElasticNet Regression": (
+        ElasticNet,
+        {
+            "alpha": [0.1, 1.0, 10.0],
+            "l1_ratio": [0.1, 0.5, 0.9],
+        },
+    ),
     "Decision Trees": (DecisionTreeRegressor, {"max_depth": [None, 10, 20, 30], "min_samples_split": [2, 10, 20]}),
     "Random Forest": (
         RandomForestRegressor,
         {"n_estimators": [10, 50, 100], "max_depth": [None, 10, 20, 30], "min_samples_split": [2, 10, 20]},
+    ),
+    "Support Vector Machines": (
+        SVR,
+        {
+            "kernel": ["linear", "poly", "rbf", "sigmoid"],
+            "C": [0.1, 1.0, 10.0],
+            "gamma": ["scale", "auto"],
+        },
     ),
     "Neural Networks": (
         MLPRegressor,
@@ -23,6 +41,21 @@ MODEL_MAPPING = {
             "activation": ["relu", "tanh"],
             "solver": ["adam", "sgd"],
             "alpha": [0.0001, 0.001, 0.01],
+        },
+    ),
+    "Gradient Boosting": (
+        GradientBoostingRegressor,
+        {
+            "n_estimators": [50, 100, 200],
+            "learning_rate": [0.01, 0.1, 0.2],
+            "max_depth": [3, 5, 7],
+        },
+    ),
+    "AdaBoost": (
+        AdaBoostRegressor,
+        {
+            "n_estimators": [50, 100, 200],
+            "learning_rate": [0.01, 0.1, 0.5],
         },
     ),
 }
@@ -65,6 +98,8 @@ def run_ml_methods(df: pd.DataFrame, target_column: str, feature_columns: list, 
             "best_hyperparameters": grid_search.best_params_,
             "cv_mean_score": -grid_search.best_score_,
             "cv_std_score": grid_search.cv_results_["std_test_score"][grid_search.best_index_],
+            "test_predictions": test_predictions.tolist(),
+            "y_test": y_test.tolist(),
             **metrics,
         }
 
