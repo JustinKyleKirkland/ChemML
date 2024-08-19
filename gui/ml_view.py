@@ -380,7 +380,7 @@ class MLView(QWidget):
             msg_box.setWindowTitle("Best ML Method Result")
             msg_box.setText(result_str)
 
-            close_button = msg_box.addButton("Close", QMessageBox.RejectRole)
+            close_button = msg_box.addButton("Close", QMessageBox.RejectRole)  # noqa
             save_button = msg_box.addButton("Save All Results", QMessageBox.ActionRole)
             msg_box.exec_()
 
