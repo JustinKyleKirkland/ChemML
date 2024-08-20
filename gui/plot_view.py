@@ -1,95 +1,21 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import (
-    QCheckBox,
-    QColorDialog,
     QComboBox,
     QDialog,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QPushButton,
     QSizePolicy,
-    QSlider,
     QSpacerItem,
     QVBoxLayout,
 )
 
-
-class MarkerOptionsDialog(QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-
-        self.setWindowTitle("Marker Options")
-        self.setGeometry(100, 100, 200, 200)
-
-        layout = QVBoxLayout()
-
-        self.marker_type_combo = QComboBox()
-        self.marker_type_combo.addItems(["o", "s", "^", "D"])
-        layout.addWidget(QLabel("Marker Type:"))
-        layout.addWidget(self.marker_type_combo)
-
-        self.marker_color_button = QPushButton("Select Marker Color")
-        self.marker_color_button.clicked.connect(self.select_marker_color)
-        layout.addWidget(self.marker_color_button)
-
-        self.marker_size_slider = QSlider(Qt.Horizontal)
-        self.marker_size_slider.setRange(1, 20)
-        self.marker_size_slider.setValue(5)
-        layout.addWidget(QLabel("Marker Size:"))
-        layout.addWidget(self.marker_size_slider)
-
-        self.marker_color: QColor = Qt.red
-
-        self.setLayout(layout)
-
-    def select_marker_color(self) -> None:
-        color: QColor = QColorDialog.getColor()
-        if color.isValid():
-            self.marker_color = color
-
-
-class LineFitOptionsDialog(QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-
-        self.setWindowTitle("Line of Best Fit Options")
-        self.setGeometry(100, 100, 200, 200)
-
-        layout = QVBoxLayout()
-
-        self.line_fit_checkbox = QCheckBox("Add Line of Best Fit")
-        layout.addWidget(self.line_fit_checkbox)
-
-        self.r_squared_checkbox = QCheckBox("Calculate R²")
-        layout.addWidget(self.r_squared_checkbox)
-
-        self.line_fit_color_button = QPushButton("Select Line of Best Fit Color")
-        self.line_fit_color_button.clicked.connect(self.select_line_fit_color)
-        layout.addWidget(self.line_fit_color_button)
-
-        self.line_thickness_slider = QSlider(Qt.Horizontal)
-        self.line_thickness_slider.setRange(1, 10)
-        self.line_thickness_slider.setValue(2)
-        layout.addWidget(QLabel("Line Thickness:"))
-        layout.addWidget(self.line_thickness_slider)
-
-        self.line_type_combo = QComboBox()
-        self.line_type_combo.addItems(["Solid", "Dashed", "Dotted", "DashDot"])
-        layout.addWidget(QLabel("Line Type:"))
-        layout.addWidget(self.line_type_combo)
-
-        self.line_fit_color: QColor = Qt.black
-
-        self.setLayout(layout)
-
-    def select_line_fit_color(self) -> None:
-        color: QColor = QColorDialog.getColor()
-        if color.isValid():
-            self.line_fit_color = color
+from utils.plotting_utils import AxesOptionsDialog, LineFitOptionsDialog, MarkerOptionsDialog
 
 
 class PlottingWidget(QDialog):
@@ -100,7 +26,10 @@ class PlottingWidget(QDialog):
 
         self.df: pd.DataFrame = df
         self.setWindowTitle("Plot Data")
-        self.setGeometry(100, 100, 400, 300)
+        self.setGeometry(100, 100, 500, 350)
+        self.zoom_factor = 1.2
+        self.original_xlim = None
+        self.original_ylim = None
 
         self.layout = QVBoxLayout()
 
@@ -115,25 +44,24 @@ class PlottingWidget(QDialog):
         self.layout.addWidget(QLabel("Select Y Data:"))
         self.layout.addWidget(self.y_combo)
 
-        # Add the plot options label
         plot_options_label = QLabel("----- Plot Options -----")
         plot_options_label.setAlignment(Qt.AlignCenter)
         self.layout.addWidget(plot_options_label)
 
-        # Create a horizontal layout for the buttons
         buttons_layout = QHBoxLayout()
 
-        # Marker Options Button
         self.marker_options_button = QPushButton("Marker Options")
         self.marker_options_button.clicked.connect(self.open_marker_options_dialog)
         buttons_layout.addWidget(self.marker_options_button)
 
-        # Line of Best Fit Options Button
         self.line_fit_options_button = QPushButton("Line of Best Fit Options")
         self.line_fit_options_button.clicked.connect(self.open_line_fit_options_dialog)
         buttons_layout.addWidget(self.line_fit_options_button)
 
-        # Add the horizontal layout to the main layout
+        self.axes_options_button = QPushButton("Axes Options")
+        self.axes_options_button.clicked.connect(self.open_axes_options_dialog)
+        buttons_layout.addWidget(self.axes_options_button)
+
         self.layout.addLayout(buttons_layout)
 
         plot_button_layout = QHBoxLayout()
@@ -151,12 +79,18 @@ class PlottingWidget(QDialog):
 
         self.setLayout(self.layout)
 
-        self.timer: QTimer = QTimer(self)
-        self.timer.timeout.connect(self.update_plot)
-
-        # Initialize dialogs
         self.marker_options_dialog = MarkerOptionsDialog(self)
         self.line_fit_options_dialog = LineFitOptionsDialog(self)
+        self.axes_options_dialog = AxesOptionsDialog(self)
+
+        self.axes_options_dialog.options_applied.connect(self.update_axes_options)
+        self.marker_options_dialog.options_applied.connect(self.update_plot)
+        self.line_fit_options_dialog.options_applied.connect(self.update_plot)
+
+        self.x_title = "X Axis"
+        self.y_title = "Y Axis"
+        self.title_size = 12
+        self.tick_size = 10
 
     def open_marker_options_dialog(self) -> None:
         self.marker_options_dialog.exec_()
@@ -164,16 +98,31 @@ class PlottingWidget(QDialog):
     def open_line_fit_options_dialog(self) -> None:
         self.line_fit_options_dialog.exec_()
 
+    def open_axes_options_dialog(self) -> None:
+        self.axes_options_dialog.exec_()
+
+    def update_axes_options(self) -> None:
+        self.x_title = self.axes_options_dialog.x_title
+        self.y_title = self.axes_options_dialog.y_title
+        self.title_size = self.axes_options_dialog.title_size
+        self.tick_size = self.axes_options_dialog.tick_size
+        self.update_plot()
+
     def plot_data(self) -> None:
         if PlottingWidget.current_plot is not None:
             plt.close(PlottingWidget.current_plot)
+
+        if self.x_combo.currentText() == self.y_combo.currentText():
+            self.show_warning_message("Invalid Data", "X and Y data cannot be the same.")
+            return
 
         PlottingWidget.current_plot = plt.figure()
         self.update_plot()
 
         plt.show()
 
-        self.timer.start(200)
+        self.cid_scroll = plt.gcf().canvas.mpl_connect("scroll_event", self.on_scroll)
+        self.cis_button_press = plt.gcf().canvas.mpl_connect("button_press_event", self.on_button_press)
 
     def update_plot(self) -> None:
         plt.clf()
@@ -181,10 +130,27 @@ class PlottingWidget(QDialog):
         x_column: str = self.x_combo.currentText()
         y_column: str = self.y_combo.currentText()
 
+        x = self.df[x_column].values
+        y = self.df[y_column].values
+
+        if len(x) > 1:
+            mean_y = np.mean(y)
+            ss_tot = np.sum((y - mean_y) ** 2)
+            if self.line_fit_options_dialog.r_squared_checkbox.isChecked():
+                z = np.polyfit(x, y, 1)
+                p = np.poly1d(z)
+                ss_res = np.sum((y - p(x)) ** 2)
+                r_squared = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0
+            else:
+                ss_res = np.sum((y - mean_y) ** 2)
+                r_squared = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0
+        else:
+            r_squared = 0
+
         plt.scatter(
-            self.df[x_column],
-            self.df[y_column],
-            marker=self.marker_options_dialog.marker_type_combo.currentText(),
+            x,
+            y,
+            marker=self.marker_options_dialog.get_marker_symbol(),
             s=self.marker_options_dialog.marker_size_slider.value(),
             color=self.marker_options_dialog.marker_color.name()
             if isinstance(self.marker_options_dialog.marker_color, QColor)
@@ -192,11 +158,11 @@ class PlottingWidget(QDialog):
         )
 
         if self.line_fit_options_dialog.line_fit_checkbox.isChecked():
-            z = np.polyfit(self.df[x_column], self.df[y_column], 1)
+            z = np.polyfit(x, y, 1)
             p = np.poly1d(z)
             plt.plot(
-                self.df[x_column],
-                p(self.df[x_column]),
+                x,
+                p(x),
                 color=self.line_fit_options_dialog.line_fit_color.name()
                 if isinstance(self.line_fit_options_dialog.line_fit_color, QColor)
                 else "black",
@@ -204,21 +170,13 @@ class PlottingWidget(QDialog):
                 linestyle=self.get_line_style(),
             )
 
-            if self.line_fit_options_dialog.r_squared_checkbox.isChecked():
-                r_squared = 1 - (
-                    np.sum((self.df[y_column] - p(self.df[x_column])) ** 2)
-                    / np.sum((self.df[y_column] - np.mean(self.df[y_column])) ** 2)
-                )
-                plt.text(0.1, 0.9, f"R² = {r_squared:.2f}", transform=plt.gca().transAxes)
+        if self.line_fit_options_dialog.r_squared_checkbox.isChecked():
+            plt.text(0.1, 0.9, f"R² = {r_squared:.2f}", transform=plt.gca().transAxes)
 
-        plt.xlabel(x_column)
-        plt.ylabel(y_column)
-        plt.title("Data Plot")
+        plt.xlabel(self.x_title, fontsize=self.title_size)
+        plt.ylabel(self.y_title, fontsize=self.title_size)
+        plt.tick_params(axis="both", which="major", labelsize=self.tick_size)
         plt.draw()
-
-    def start_timer(self) -> None:
-        if not self.timer.isActive():
-            self.timer.start(100)
 
     def update_data(self, df: pd.DataFrame) -> None:
         self.df = df
@@ -237,3 +195,41 @@ class PlottingWidget(QDialog):
             return "-."
         else:
             return "-"
+
+    def show_warning_message(self, title: str, message: str) -> None:
+        msg_box = QMessageBox(self)
+        msg_box.setIcon(QMessageBox.Warning)
+        msg_box.setWindowTitle(title)
+        msg_box.setText(message)
+        msg_box.setStandardButtons(QMessageBox.Ok)
+        msg_box.exec_()
+
+    def on_scroll(self, event) -> None:
+        ax = plt.gca()
+        xlim = ax.get_xlim()
+        ylim = ax.get_ylim()
+
+        if event.button == "up":
+            scale_factor = 1 / self.zoom_factor
+        elif event.button == "down":
+            scale_factor = self.zoom_factor
+        else:
+            scale_factor = 1
+
+        new_xlim = [x + (x - xlim[0]) * (1 - scale_factor) for x in xlim]
+        new_ylim = [y + (y - ylim[0]) * (1 - scale_factor) for y in ylim]
+
+        ax.set_xlim(new_xlim)
+        ax.set_ylim(new_ylim)
+
+        plt.draw()
+
+    def on_button_press(self, event) -> None:
+        if event.button == 3:
+            if self.original_xlim is not None and self.original_ylim is not None:
+                plt.gca().set_xlim(self.original_xlim)
+                plt.gca().set_ylim(self.original_ylim)
+                plt.draw()
+        else:
+            self.original_xlim = plt.gca().get_xlim()
+            self.original_ylim = plt.gca().get_ylim()
