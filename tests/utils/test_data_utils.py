@@ -56,16 +56,12 @@ class TestDataUtils(unittest.TestCase):
 
     def test_impute_values_with_mean(self):
         result = impute_values(self.df, "Value", method="mean")
-        expected = pd.DataFrame(
-            {"Category": ["A", "B", "C", "D"], "Value": [1, 2, 2.333333, 4]}
-        )
+        expected = pd.DataFrame({"Category": ["A", "B", "C", "D"], "Value": [1, 2, 2.333333, 4]})
         pd.testing.assert_frame_equal(result, expected)
 
     def test_impute_values_with_median(self):
         result = impute_values(self.df, "Value", method="median")
-        expected = pd.DataFrame(
-            {"Category": ["A", "B", "C", "D"], "Value": [1, 2, 2.0, 4]}
-        )
+        expected = pd.DataFrame({"Category": ["A", "B", "C", "D"], "Value": [1, 2, 2.0, 4]})
         pd.testing.assert_frame_equal(result, expected)
 
     def test_impute_values_column_not_found(self):

@@ -20,9 +20,7 @@ def setup_logging():
     # Check if handlers already exist to avoid duplicates
     if not logger.handlers:
         # Define a formatter
-        formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        )
+        formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
         # Create a file handler
         file_handler = logging.FileHandler(log_file_path)
