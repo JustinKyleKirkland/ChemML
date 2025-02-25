@@ -152,33 +152,27 @@ class CSVView(QWidget):
 
 	def impute_missing_values_all(self, strategy: str) -> None:
 		"""
-		Imputes missing values for all columns in the DataFrame using the specified strategy.
+		Impute missing values in all columns with missing values.
 
-		Parameters:
-		    strategy (str): The imputation strategy to use.
-
-		Returns:
-		    None
+		Args:
+		    strategy: Imputation strategy ('mean', 'median', 'knn', or 'mice')
 		"""
-		logging.info(f"Imputing missing values for all columns using {strategy}")
 		try:
+			# First check if all columns with missing values are numeric
+			columns_with_missing = [col for col in self.df.columns if self.df[col].isnull().any()]
+			non_numeric_cols = [col for col in columns_with_missing if not pd.api.types.is_numeric_dtype(self.df[col])]
+
+			if non_numeric_cols:
+				raise ValueError(f"The following columns contain non-numerical values: {', '.join(non_numeric_cols)}")
+
 			self.undo_stack.append(self.df.copy())
-			self.redo_stack.clear()
-
-			for column in self.df.columns:
-				if self.df[column].isnull().any():
-					self.df = impute_values(self.df, column, strategy)
-
+			for column in columns_with_missing:
+				self.df = impute_values(self.df, column, strategy)
 			self.update_table(self.df)
-			self.update_column_dropdown()
 
-			self.data_ready.emit(self.df)
-			self.show_errors(validate_csv(self.df))
-
-			logging.info(f"Missing values imputed for all columns using {strategy}")
 		except ValueError as e:
-			self.show_error_message("Imputation Error", str(e))
-			logging.error(f"Error in imputing missing values: {e}")
+			self.show_error("Imputation Error", str(e))
+			self.logger.error(f"Error in imputation: {str(e)}")
 
 	def create_error_label(self) -> QLabel:
 		"""
@@ -403,41 +397,26 @@ class CSVView(QWidget):
 
 	def impute_missing_values(self, column_name: str, strategy: str) -> None:
 		"""
-		Imputes missing values in a specific column of the DataFrame using a specified strategy.
+		Impute missing values in a specified column.
 
 		Args:
-		    column_name (str): The name of the column to impute missing values.
-		    strategy (str): The imputation strategy to use.
-
-		Returns:
-		    None
-
-		Raises:
-		    ValueError: If an error occurs during the imputation process.
-
+		    column_name: Name of the column to impute
+		    strategy: Imputation strategy ('mean', 'median', 'knn', or 'mice')
 		"""
-		logging.info(f"Imputing missing values for column: {column_name} using {strategy}")
 		try:
+			if column_name not in self.df.columns:
+				raise ValueError(f"Column '{column_name}' not found in DataFrame")
+
+			if not pd.api.types.is_numeric_dtype(self.df[column_name]):
+				raise ValueError(f"Column '{column_name}' contains non-numerical values")
+
 			self.undo_stack.append(self.df.copy())
-			self.redo_stack.clear()
-
 			self.df = impute_values(self.df, column_name, strategy)
-
 			self.update_table(self.df)
-			self.update_column_dropdown()
 
-			if self.df[column_name].isnull().any():
-				warning_msg = (
-					f"Warning: Column '{column_name}' still contains null values after applying {strategy} imputation."
-				)
-				self.show_errors([warning_msg])
-				logging.warning(warning_msg)
-			else:
-				logging.info(f"Missing values imputed for column: {column_name} using {strategy}")
-				self.show_errors([])  # Clear previous errors if successful
 		except ValueError as e:
-			self.show_error_message("Imputation Error", str(e))
-			logging.error(f"Error in imputing missing values: {e}")
+			self.show_error("Imputation Error", str(e))
+			self.logger.error(f"Error in imputation: {str(e)}")
 
 	def show_errors(self, errors: List[str]) -> None:
 		"""
