@@ -777,3 +777,19 @@ class CSVView(QWidget):
 		    pd.DataFrame: The DataFrame containing the CSV data.
 		"""
 		return self.df
+
+	def create_message_box(self, title: str, text: str, icon: QMessageBox.Icon = QMessageBox.Warning) -> QMessageBox:
+		"""Creates a standardized message box."""
+		msg_box = QMessageBox(self)
+		msg_box.setIcon(icon)
+		msg_box.setWindowTitle(title)
+		msg_box.setText(text)
+		return msg_box
+
+	def show_warning(self, title: str, message: str) -> None:
+		"""Shows a warning message box."""
+		self.create_message_box(title, message, QMessageBox.Warning).exec_()
+
+	def show_error(self, title: str, message: str) -> None:
+		"""Shows an error message box."""
+		self.create_message_box(title, message, QMessageBox.Critical).exec_()

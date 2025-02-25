@@ -59,13 +59,15 @@ class MLView(QWidget):
 				"Linear Regression",
 				"Ridge Regression",
 				"Lasso Regression",
-				"ElasticNet Regression",
-				"Decision Trees",
-				"Random Forest",
-				"Support Vector Machines",
-				"Neural Networks",
-				"Gradient Boosting",
-				"AdaBoost",
+				"Elastic Net Regression",
+				"Decision Tree Regression",
+				"Random Forest Regression",
+				"Support Vector Regression",
+				"Neural Network Regression",
+				"Gradient Boosting Regression",
+				"AdaBoost Regression",
+				"K-Nearest Neighbors Regression",
+				"Gaussian Process Regression",
 			]
 		)
 		self.left_column_layout.addWidget(self.available_methods_list)
@@ -288,18 +290,24 @@ class MLView(QWidget):
 
 			self.logger.info("ML methods executed successfully.")
 
-			best_method = max(results.keys(), key=lambda m: results[m].get("cv_mean_score", 0))
+			def get_cv_score(model_results):
+				try:
+					return model_results.cv_mean_score
+				except AttributeError:
+					return 0
+
+			best_method = max(results.keys(), key=lambda m: get_cv_score(results[m]))
 			best_result = results[best_method]
 
 			result_str = (
 				f"Best Method: {best_method}\n"
-				f"  CV Mean Score: {best_result['cv_mean_score']:.4f}\n"
-				f"  CV Std Score: {best_result['cv_std_score']:.4f}\n"
-				f"  Train MSE: {best_result.get('train_mse', 'N/A'):.4f}\n"
-				f"  Test MSE: {best_result.get('test_mse', 'N/A'):.4f}\n"
-				f"  Train R2: {best_result.get('train_r2', 'N/A'):.4f}\n"
-				f"  Test R2: {best_result.get('test_r2', 'N/A'):.4f}\n"
-				f"  Best Hyperparameters: {best_result.get('best_hyperparameters', 'N/A')}\n"
+				f"  CV Mean Score: {best_result.cv_mean_score:.4f}\n"
+				f"  CV Std Score: {best_result.cv_std_score:.4f}\n"
+				f"  Train MSE: {best_result.train_mse:.4f}\n"
+				f"  Test MSE: {best_result.test_mse:.4f}\n"
+				f"  Train R2: {best_result.train_r2:.4f}\n"
+				f"  Test R2: {best_result.test_r2:.4f}\n"
+				f"  Best Hyperparameters: {best_result.best_hyperparameters}\n"
 			)
 
 			msg_box = QMessageBox(self)
@@ -322,6 +330,7 @@ class MLView(QWidget):
 			QMessageBox.critical(self, "Error", f"Error running ML methods: {e}")
 
 	def plot_results_clicked(self) -> None:
+		"""Opens a dialog to select models for plotting."""
 		selected_methods = self.get_selected_models()
 		if not selected_methods:
 			QMessageBox.warning(self, "Warning", "No ML methods available for plotting.")
@@ -329,25 +338,36 @@ class MLView(QWidget):
 
 		dialog = QDialog(self)
 		dialog.setWindowTitle("Select Method to Plot")
-
 		layout = QVBoxLayout()
-		checkboxes = {}
-		for method in selected_methods:
-			checkbox = QCheckBox(method)
-			layout.addWidget(checkbox)
-			checkboxes[method] = checkbox
 
+		# Create checkboxes for each method
+		checkboxes = {method: QCheckBox(method) for method in selected_methods}
+		for checkbox in checkboxes.values():
+			layout.addWidget(checkbox)
+
+		# Add buttons
 		button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
 		button_box.accepted.connect(
 			lambda: self.plot_selected_methods([m for m, cb in checkboxes.items() if cb.isChecked()])
 		)
 		button_box.rejected.connect(dialog.reject)
-
 		layout.addWidget(button_box)
+
 		dialog.setLayout(layout)
 		dialog.exec_()
 
+	def create_scatter_plot(self, test_actuals: list, test_predictions: list, method: str) -> None:
+		"""Creates a scatter plot comparing actual vs predicted values."""
+		plt.figure()
+		plt.scatter(test_actuals, test_predictions, alpha=0.7, label="Predictions")
+		plt.xlabel("Actual Values")
+		plt.ylabel("Predicted Values")
+		plt.title(f"{method} - Actual vs Predicted")
+		plt.grid(True)
+		plt.show()
+
 	def plot_selected_methods(self, methods: list) -> None:
+		"""Plots results for selected methods."""
 		if not methods:
 			QMessageBox.warning(self, "Warning", "No methods selected for plotting.")
 			return
@@ -357,25 +377,13 @@ class MLView(QWidget):
 			QMessageBox.warning(self, "Warning", "No target column selected.")
 			return
 
-		results = run_ml_methods(self.df, target_column, self.get_feature_columns(), methods)
+		try:
+			results = run_ml_methods(self.df, target_column, self.get_feature_columns(), methods)
 
-		for method in methods:
-			result = results.get(method, {})
-			test_predictions = result.get("test_predictions", [])
-			test_actuals = result.get("y_test", [])
-
-			if len(test_predictions) != len(test_actuals):
-				QMessageBox.warning(self, "Warning", f"Prediction length mismatch for {method}.")
-				continue
-
-			if not test_predictions:
-				QMessageBox.warning(self, "Warning", f"No predictions available for {method}.")
-				continue
-
-			plt.figure()
-			plt.scatter(test_actuals, test_predictions, alpha=0.7, label="Predictions")
-			plt.xlabel("Actual Values")
-			plt.ylabel("Predicted Values")
-			plt.title(f"{method} - Actual vs Predicted")
-			plt.grid(True)
-			plt.show()
+			for method in methods:
+				result = results[method]
+				self.create_scatter_plot(
+					test_actuals=result.y_test, test_predictions=result.test_predictions, method=method
+				)
+		except Exception as e:
+			QMessageBox.warning(self, "Error", f"Error plotting results: {str(e)}")
