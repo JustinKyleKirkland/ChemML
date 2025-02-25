@@ -1,5 +1,4 @@
 from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import (
 	QCheckBox,
 	QColorDialog,
@@ -13,145 +12,128 @@ from PyQt5.QtWidgets import (
 )
 
 
-class AxesOptionsDialog(QDialog):
+class BaseOptionsDialog(QDialog):
 	options_applied = pyqtSignal()
 
-	def __init__(self, parent=None):
+	def __init__(self, title, geometry=(100, 100, 300, 250), parent=None):
 		super().__init__(parent)
+		self.setWindowTitle(title)
+		self.setGeometry(*geometry)
+		self.layout = QVBoxLayout()
+		self.setLayout(self.layout)
 
-		self.setWindowTitle("Axes Options")
-		self.setGeometry(100, 100, 300, 250)
+	def _add_slider(self, label, min_val, max_val, default):
+		slider = QSlider(Qt.Horizontal)
+		slider.setRange(min_val, max_val)
+		slider.setValue(default)
+		self.layout.addWidget(QLabel(label))
+		self.layout.addWidget(slider)
+		return slider
 
-		layout = QVBoxLayout()
+	def _add_color_button(self, label, slot):
+		button = QPushButton(label)
+		button.clicked.connect(slot)
+		self.layout.addWidget(button)
+		return button
 
+	def _add_apply_button(self):
+		apply_button = QPushButton("Apply")
+		apply_button.clicked.connect(self.apply_options)
+		self.layout.addWidget(apply_button)
+
+
+class AxesOptionsDialog(BaseOptionsDialog):
+	def __init__(self, parent=None):
+		super().__init__("Axes Options", parent=parent)
+
+		# Input fields for axis titles
 		self.x_title_input = QLineEdit()
 		self.y_title_input = QLineEdit()
 
-		layout.addWidget(QLabel("X Axis Title:"))
-		layout.addWidget(self.x_title_input)
-		layout.addWidget(QLabel("Y Axis Title:"))
-		layout.addWidget(self.y_title_input)
+		self.layout.addWidget(QLabel("X Axis Title:"))
+		self.layout.addWidget(self.x_title_input)
+		self.layout.addWidget(QLabel("Y Axis Title:"))
+		self.layout.addWidget(self.y_title_input)
 
-		self.title_size_slider = QSlider(Qt.Horizontal)
-		self.title_size_slider.setRange(8, 40)
-		self.title_size_slider.setValue(12)
-		layout.addWidget(QLabel("Title Size:"))
-		layout.addWidget(self.title_size_slider)
+		# Sliders
+		self.title_size_slider = self._add_slider("Title Size:", 8, 40, 12)
+		self.tick_size_slider = self._add_slider("Tick Size:", 8, 20, 10)
 
-		self.tick_size_slider = QSlider(Qt.Horizontal)
-		self.tick_size_slider.setRange(8, 20)
-		self.tick_size_slider.setValue(10)
-		layout.addWidget(QLabel("Tick Size:"))
-		layout.addWidget(self.tick_size_slider)
+		self._add_apply_button()
 
-		apply_button = QPushButton("Apply")
-		apply_button.clicked.connect(self.apply_options)
-		layout.addWidget(apply_button)
-
-		self.setLayout(layout)
-
+		# Default values
 		self.x_title = "X Axis"
 		self.y_title = "Y Axis"
 		self.title_size = 12
 		self.tick_size = 10
 
 	def apply_options(self) -> None:
-		self.x_title = self.x_title_input.text() if self.x_title_input.text() else "X Axis"
-		self.y_title = self.y_title_input.text() if self.y_title_input.text() else "Y Axis"
+		self.x_title = self.x_title_input.text() or "X Axis"
+		self.y_title = self.y_title_input.text() or "Y Axis"
 		self.title_size = self.title_size_slider.value()
 		self.tick_size = self.tick_size_slider.value()
 		self.options_applied.emit()
 
 
-class MarkerOptionsDialog(QDialog):
-	options_applied = pyqtSignal()
+class MarkerOptionsDialog(BaseOptionsDialog):
+	MARKER_SYMBOLS = {"Circle": "o", "Square": "s", "Triangle": "^", "Diamond": "D"}
 
 	def __init__(self, parent=None):
-		super().__init__(parent)
+		super().__init__("Marker Options", geometry=(100, 100, 200, 200), parent=parent)
 
-		self.setWindowTitle("Marker Options")
-		self.setGeometry(100, 100, 200, 200)
-
-		layout = QVBoxLayout()
-
+		# Marker type combo box
 		self.marker_type_combo = QComboBox()
-		self.marker_type_combo.addItems(["Circle", "Square", "Triangle", "Diamond"])
-		layout.addWidget(QLabel("Marker Type:"))
-		layout.addWidget(self.marker_type_combo)
+		self.marker_type_combo.addItems(self.MARKER_SYMBOLS.keys())
+		self.layout.addWidget(QLabel("Marker Type:"))
+		self.layout.addWidget(self.marker_type_combo)
 
-		self.marker_color_button = QPushButton("Select Marker Color")
-		self.marker_color_button.clicked.connect(self.select_marker_color)
-		layout.addWidget(self.marker_color_button)
+		# Color selection
+		self.marker_color = Qt.red
+		self._add_color_button("Select Marker Color", self.select_marker_color)
 
-		self.marker_size_slider = QSlider(Qt.Horizontal)
-		self.marker_size_slider.setRange(1, 20)
-		self.marker_size_slider.setValue(5)
-		layout.addWidget(QLabel("Marker Size:"))
-		layout.addWidget(self.marker_size_slider)
+		# Size slider
+		self.marker_size_slider = self._add_slider("Marker Size:", 1, 20, 5)
 
-		self.marker_color: QColor = Qt.red
-
-		apply_button = QPushButton("Apply")
-		apply_button.clicked.connect(self.apply_options)
-		layout.addWidget(apply_button)
-
-		self.setLayout(layout)
+		self._add_apply_button()
 
 	def select_marker_color(self) -> None:
-		color: QColor = QColorDialog.getColor()
+		color = QColorDialog.getColor()
 		if color.isValid():
 			self.marker_color = color
 
 	def get_marker_symbol(self) -> str:
-		symbol_mapping = {"Circle": "o", "Square": "s", "Triangle": "^", "Diamond": "D"}
-		return symbol_mapping.get(self.marker_type_combo.currentText(), "o")
+		return self.MARKER_SYMBOLS.get(self.marker_type_combo.currentText(), "o")
 
 	def apply_options(self) -> None:
 		self.options_applied.emit()
 
 
-class LineFitOptionsDialog(QDialog):
-	options_applied = pyqtSignal()
-
+class LineFitOptionsDialog(BaseOptionsDialog):
 	def __init__(self, parent=None):
-		super().__init__(parent)
+		super().__init__("Line of Best Fit Options", geometry=(100, 100, 200, 200), parent=parent)
 
-		self.setWindowTitle("Line of Best Fit Options")
-		self.setGeometry(100, 100, 200, 200)
-
-		layout = QVBoxLayout()
-
+		# Checkboxes
 		self.line_fit_checkbox = QCheckBox("Add Line of Best Fit")
-		layout.addWidget(self.line_fit_checkbox)
-
 		self.r_squared_checkbox = QCheckBox("Calculate R²")
-		layout.addWidget(self.r_squared_checkbox)
+		self.layout.addWidget(self.line_fit_checkbox)
+		self.layout.addWidget(self.r_squared_checkbox)
 
-		self.line_fit_color_button = QPushButton("Select Line of Best Fit Color")
-		self.line_fit_color_button.clicked.connect(self.select_line_fit_color)
-		layout.addWidget(self.line_fit_color_button)
+		# Color selection
+		self.line_fit_color = Qt.black
+		self._add_color_button("Select Line of Best Fit Color", self.select_line_fit_color)
 
-		self.line_thickness_slider = QSlider(Qt.Horizontal)
-		self.line_thickness_slider.setRange(1, 10)
-		self.line_thickness_slider.setValue(2)
-		layout.addWidget(QLabel("Line Thickness:"))
-		layout.addWidget(self.line_thickness_slider)
+		# Line properties
+		self.line_thickness_slider = self._add_slider("Line Thickness:", 1, 10, 2)
 
 		self.line_type_combo = QComboBox()
 		self.line_type_combo.addItems(["Solid", "Dashed", "Dotted", "DashDot"])
-		layout.addWidget(QLabel("Line Type:"))
-		layout.addWidget(self.line_type_combo)
+		self.layout.addWidget(QLabel("Line Type:"))
+		self.layout.addWidget(self.line_type_combo)
 
-		self.line_fit_color: QColor = Qt.black
-
-		apply_button = QPushButton("Apply")
-		apply_button.clicked.connect(self.apply_options)
-		layout.addWidget(apply_button)
-
-		self.setLayout(layout)
+		self._add_apply_button()
 
 	def select_line_fit_color(self) -> None:
-		color: QColor = QColorDialog.getColor()
+		color = QColorDialog.getColor()
 		if color.isValid():
 			self.line_fit_color = color
 
