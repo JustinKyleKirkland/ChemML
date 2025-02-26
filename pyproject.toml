@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "your-project-name"
+name = "chemml"
 version = "0.1.0"
-description = "Your project description"
+description = "Chemical Machine Learning Library"
 requires-python = ">=3.10"
 dependencies = [
     # Add your main project dependencies here
@@ -17,6 +17,10 @@ dev = [
     "pytest-qt",  # Since you have GUI tests
     "ruff>=0.2.0",
 ]
+
+# Add this section to specify where your package code lives
+[tool.hatch.build.targets.wheel]
+packages = ["chemml"]
 
 [tool.ruff]
 # Exclude files and directories from ruff checks
