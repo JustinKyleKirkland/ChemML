@@ -1,15 +1,20 @@
 import logging
 from typing import List, Tuple
 
+import numpy as np
 import pandas as pd
 from PyQt5.QtCore import QPoint, Qt, pyqtSignal
 from PyQt5.QtGui import QBrush, QFontMetrics
 from PyQt5.QtWidgets import (
 	QComboBox,
+	QDialog,
+	QDialogButtonBox,
 	QFileDialog,
 	QHBoxLayout,
 	QLabel,
 	QLineEdit,
+	QListWidget,
+	QListWidgetItem,
 	QMenu,
 	QMessageBox,
 	QPushButton,
@@ -19,6 +24,8 @@ from PyQt5.QtWidgets import (
 	QVBoxLayout,
 	QWidget,
 )
+from rdkit import Chem
+from rdkit.Chem import AllChem, Descriptors
 
 from utils.color_assets import ERROR_COLOR, NAN_COLOR, NON_NUM_COLOR
 from utils.data_utils import impute_values, one_hot_encode, validate_csv
@@ -70,6 +77,12 @@ class CSVView(QWidget):
 	    apply_one_hot_encoding(column_name: str, n_distinct: bool = True) -> None:
 
 	    impute_missing_values(column_name: str, strategy: str) -> None:
+
+	    create_rdkit_menu(self, column_name: str) -> QMenu:
+
+	    canonicalize_smiles(self, column_name: str) -> None:
+
+	    show_descriptor_selector(self, column_name: str) -> None:
 	"""
 
 	data_ready = pyqtSignal(pd.DataFrame)
@@ -168,6 +181,9 @@ class CSVView(QWidget):
 			self.undo_stack.append(self.df.copy())
 			for column in columns_with_missing:
 				self.df = impute_values(self.df, column, strategy)
+
+			# Clear error messages if imputation was successful
+			self.error_label.setText("")
 			self.update_table(self.df)
 
 		except ValueError as e:
@@ -412,6 +428,9 @@ class CSVView(QWidget):
 
 			self.undo_stack.append(self.df.copy())
 			self.df = impute_values(self.df, column_name, strategy)
+
+			# Clear error messages if imputation was successful
+			self.error_label.setText("")
 			self.update_table(self.df)
 
 		except ValueError as e:
@@ -523,38 +542,41 @@ class CSVView(QWidget):
 		return one_hot_menu
 
 	def update_table(self, df: pd.DataFrame) -> None:
-		"""
-		Update the table widget with new data from a DataFrame.
+		"""Update the table widget with new DataFrame data."""
+		try:
+			self.table_widget.setRowCount(len(df))
+			self.table_widget.setColumnCount(len(df.columns))
+			self.table_widget.setHorizontalHeaderLabels(df.columns)
 
-		Args:
-		    df (pd.DataFrame): The DataFrame containing the new data.
+			for i, (_, row) in enumerate(df.iterrows()):
+				for j, value in enumerate(row):
+					item = QTableWidgetItem()
 
-		Returns:
-		    None
-		"""
-		logging.debug("Updating table with new data.")
-		self.table_widget.clear()
-		self.table_widget.setRowCount(len(df))
-		self.table_widget.setColumnCount(len(df.columns))
-		self.table_widget.setHorizontalHeaderLabels(df.columns)
+					# Check if value is NaN
+					if pd.isna(value):
+						item.setBackground(QBrush(NAN_COLOR))
+						item.setText("")
+					else:
+						# Format number to string with reasonable precision
+						if isinstance(value, (int, float, np.number)):
+							if isinstance(value, (int, np.integer)):
+								text = str(value)
+							else:
+								text = f"{value:.6g}"
+							item.setData(Qt.DisplayRole, float(value))
+						else:
+							text = str(value)
+							item.setBackground(QBrush(NON_NUM_COLOR))
+						item.setText(text)
 
-		for col_index, column in enumerate(df.columns):
-			has_nan = df[column].isnull().any()
-			is_numerical = pd.api.types.is_numeric_dtype(df[column])
+					self.table_widget.setItem(i, j, item)
 
-			for row_index in range(len(df)):
-				item = QTableWidgetItem(str(df.at[row_index, column]))
+			# Resize columns to content
+			self.table_widget.resizeColumnsToContents()
 
-				if has_nan:
-					item.setBackground(QBrush(NAN_COLOR))
-
-				if not is_numerical:
-					item.setBackground(QBrush(NON_NUM_COLOR))
-
-				self.table_widget.setItem(row_index, col_index, item)
-
-		self.table_widget.resizeColumnsToContents()
-		logging.info("Table updated successfully.")
+		except Exception as e:
+			self.show_error("Update Error", str(e))
+			logging.error(f"Error updating table: {str(e)}")
 
 	def filter_data(self) -> None:
 		"""
@@ -736,6 +758,11 @@ class CSVView(QWidget):
 			context_menu.addMenu(self.create_impute_menu(column_name))
 
 		context_menu.addAction("Copy", self.copy_selected_values)
+
+		# Add RDKit menu for string columns that might contain SMILES
+		if self.df[column_name].dtype == "object":
+			context_menu.addMenu(self.create_rdkit_menu(column_name))
+
 		context_menu.exec_(self.table_widget.mapToGlobal(pos))
 
 	def update_column_dropdown(self) -> None:
@@ -772,3 +799,322 @@ class CSVView(QWidget):
 	def show_error(self, title: str, message: str) -> None:
 		"""Shows an error message box."""
 		self.create_message_box(title, message, QMessageBox.Critical).exec_()
+
+	def create_rdkit_menu(self, column_name: str) -> QMenu:
+		"""Creates a menu for RDKit operations on SMILES columns."""
+		rdkit_menu = QMenu("RDKit Operations", self)
+
+		# Add canonicalization option
+		rdkit_menu.addAction("Convert to Canonical SMILES", lambda: self.canonicalize_smiles(column_name))
+
+		# Add separator before descriptor options
+		rdkit_menu.addSeparator()
+
+		# Add RDKit descriptor options
+		rdkit_menu.addAction(
+			"Add Basic Properties (MW, LogP, TPSA)",
+			lambda: self.add_rdkit_descriptors(column_name, descriptor_set="basic"),
+		)
+		rdkit_menu.addAction("Add Custom Properties...", lambda: self.show_descriptor_selector(column_name))
+		rdkit_menu.addAction(
+			"Add All Properties", lambda: self.add_rdkit_descriptors(column_name, descriptor_set="all")
+		)
+
+		# Add fingerprint submenu
+		fp_menu = QMenu("Add Fingerprints", self)
+		fp_menu.addAction(
+			"ECFP4 (Morgan)",
+			lambda: self.add_rdkit_descriptors(column_name, descriptor_set="fingerprints", fp_type="morgan"),
+		)
+		fp_menu.addAction(
+			"ECFP6 (Morgan r=3)",
+			lambda: self.add_rdkit_descriptors(column_name, descriptor_set="fingerprints", fp_type="morgan_r3"),
+		)
+		fp_menu.addAction(
+			"MACCS Keys",
+			lambda: self.add_rdkit_descriptors(column_name, descriptor_set="fingerprints", fp_type="maccs"),
+		)
+		fp_menu.addAction(
+			"Topological",
+			lambda: self.add_rdkit_descriptors(column_name, descriptor_set="fingerprints", fp_type="topological"),
+		)
+		fp_menu.addAction(
+			"Atom Pairs",
+			lambda: self.add_rdkit_descriptors(column_name, descriptor_set="fingerprints", fp_type="atompairs"),
+		)
+		rdkit_menu.addMenu(fp_menu)
+
+		return rdkit_menu
+
+	def show_descriptor_selector(self, column_name: str) -> None:
+		"""
+		Show dialog for selecting custom RDKit descriptors.
+
+		Args:
+			column_name: Name of column containing SMILES strings
+		"""
+		try:
+			# Get list of all available descriptors
+			desc_names = sorted([desc_name[0] for desc_name in Descriptors._descList])
+
+			# Create dialog
+			dialog = QDialog(self)
+			dialog.setWindowTitle("Select RDKit Descriptors")
+			layout = QVBoxLayout()
+
+			# Add search box
+			search_box = QLineEdit()
+			search_box.setPlaceholderText("Search descriptors...")
+			layout.addWidget(search_box)
+
+			# Add list widget with checkboxes
+			list_widget = QListWidget()
+			list_widget.setSelectionMode(QListWidget.MultiSelection)
+
+			# Add all descriptors to list
+			for desc in desc_names:
+				item = QListWidgetItem(desc)
+				item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+				item.setCheckState(Qt.Unchecked)
+				list_widget.addItem(item)
+
+			layout.addWidget(list_widget)
+
+			# Add search functionality
+			def filter_list():
+				search_text = search_box.text().lower()
+				for i in range(list_widget.count()):
+					item = list_widget.item(i)
+					item.setHidden(search_text not in item.text().lower())
+
+			search_box.textChanged.connect(filter_list)
+
+			# Add buttons
+			button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+			button_box.accepted.connect(dialog.accept)
+			button_box.rejected.connect(dialog.reject)
+			layout.addWidget(button_box)
+
+			dialog.setLayout(layout)
+
+			# Show dialog and get result
+			if dialog.exec_() == QDialog.Accepted:
+				# Get selected descriptors
+				selected_descs = []
+				for i in range(list_widget.count()):
+					item = list_widget.item(i)
+					if item.checkState() == Qt.Checked:
+						selected_descs.append(item.text())
+
+				if selected_descs:
+					self.add_rdkit_descriptors(column_name, descriptor_set="custom", custom_descriptors=selected_descs)
+				else:
+					self.show_warning("No Selection", "No descriptors were selected.")
+
+		except Exception as e:
+			self.show_error("Error", f"Failed to show descriptor selector: {str(e)}")
+			logging.error(f"Error in descriptor selector: {str(e)}")
+
+	def add_rdkit_descriptors(
+		self,
+		column_name: str,
+		descriptor_set: str = "basic",
+		custom_descriptors: List[str] = None,
+		fp_type: str = "morgan",
+	) -> None:
+		"""
+		Add RDKit descriptors or fingerprints for molecules in a SMILES column.
+		Skips descriptors that raise errors during calculation.
+		"""
+		try:
+			# Validate custom descriptors first
+			if descriptor_set == "custom":
+				if not custom_descriptors:
+					raise ValueError("No descriptors specified for custom descriptor set")
+				for desc_name in custom_descriptors:
+					if not hasattr(Descriptors, desc_name):
+						raise ValueError(f"Invalid descriptor name: {desc_name}")
+
+			# Then validate SMILES
+			mols = [Chem.MolFromSmiles(smiles) for smiles in self.df[column_name] if pd.notna(smiles)]
+			if not all(mols):
+				raise ValueError("Invalid SMILES strings detected in column")
+
+			# Save current state for undo
+			self.undo_stack.append(self.df.copy())
+			self.redo_stack.clear()
+
+			if descriptor_set == "fingerprints":
+				if fp_type == "morgan":
+					self._add_morgan_fingerprints(column_name, radius=2)
+				elif fp_type == "morgan_r3":
+					self._add_morgan_fingerprints(column_name, radius=3)
+				elif fp_type == "maccs":
+					self._add_maccs_fingerprints(column_name)
+				elif fp_type == "topological":
+					self._add_topological_fingerprints(column_name)
+				elif fp_type == "atompairs":
+					self._add_atompair_fingerprints(column_name)
+
+			elif descriptor_set == "basic":
+				# Add basic descriptors
+				self.df[f"{column_name}_MW"] = self.df[column_name].apply(
+					lambda x: Descriptors.ExactMolWt(Chem.MolFromSmiles(x)) if pd.notna(x) else None
+				)
+				self.df[f"{column_name}_LogP"] = self.df[column_name].apply(
+					lambda x: Descriptors.MolLogP(Chem.MolFromSmiles(x)) if pd.notna(x) else None
+				)
+				self.df[f"{column_name}_TPSA"] = self.df[column_name].apply(
+					lambda x: Descriptors.TPSA(Chem.MolFromSmiles(x)) if pd.notna(x) else None
+				)
+
+			elif descriptor_set == "all":
+				# Calculate all available descriptors with error handling
+				desc_names = [desc_name[0] for desc_name in Descriptors._descList]
+				for desc_name in desc_names:
+					try:
+						desc_func = getattr(Descriptors, desc_name)
+						# Test descriptor on first valid molecule
+						test_mol = next(mol for mol in mols if mol is not None)
+						_ = desc_func(test_mol)  # Test calculation
+
+						# If test passes, calculate for all molecules
+						self.df[f"{column_name}_{desc_name}"] = self.df[column_name].apply(
+							lambda x: desc_func(Chem.MolFromSmiles(x)) if pd.notna(x) else None
+						)
+					except Exception as calc_error:
+						logging.warning(f"Skipping descriptor {desc_name} due to error: {str(calc_error)}")
+						continue
+
+			elif descriptor_set == "custom":
+				# Calculate selected descriptors with error handling
+				successful_descs = []
+				for desc_name in custom_descriptors:
+					try:
+						desc_func = getattr(Descriptors, desc_name)
+						# Test descriptor on first valid molecule
+						test_mol = next(mol for mol in mols if mol is not None)
+						_ = desc_func(test_mol)  # Test calculation
+
+						# If test passes, calculate for all molecules
+						self.df[f"{column_name}_{desc_name}"] = self.df[column_name].apply(
+							lambda x: desc_func(Chem.MolFromSmiles(x)) if pd.notna(x) else None
+						)
+						successful_descs.append(desc_name)
+					except Exception as calc_error:
+						logging.warning(f"Skipping descriptor {desc_name} due to error: {str(calc_error)}")
+						continue
+
+				if not successful_descs:
+					raise ValueError("No valid descriptors could be calculated")
+
+			self.update_table(self.df)
+			self.data_ready.emit(self.df)
+
+		except Exception as e:
+			# Re-raise ValueError exceptions
+			if isinstance(e, ValueError):
+				raise e
+			# Log and show other errors
+			self.show_error("RDKit Error", str(e))
+			logging.error(f"Error in RDKit processing: {str(e)}")
+			raise  # Re-raise the exception to ensure test failure
+
+	def _add_morgan_fingerprints(self, column_name: str, radius: int = 2) -> None:
+		"""Add Morgan fingerprints to the DataFrame."""
+
+		def get_morgan_fp(smiles, radius):
+			if pd.isna(smiles):
+				return [0] * 1024
+			mol = Chem.MolFromSmiles(smiles)
+			if mol is None:
+				return [0] * 1024
+			return [int(x) for x in list(AllChem.GetMorganFingerprintAsBitVect(mol, radius, 1024).ToBitString())]
+
+		fps = self.df[column_name].apply(lambda x: get_morgan_fp(x, radius))
+		prefix = f"{column_name}_ECFP{radius*2}"
+		fp_df = pd.DataFrame(fps.tolist(), columns=[f"{prefix}_{i}" for i in range(1024)])
+		self.df = pd.concat([self.df, fp_df], axis=1)
+
+	def _add_maccs_fingerprints(self, column_name: str) -> None:
+		"""Add MACCS keys fingerprints to the DataFrame."""
+
+		def get_maccs_fp(smiles):
+			if pd.isna(smiles):
+				return [0] * 167
+			mol = Chem.MolFromSmiles(smiles)
+			if mol is None:
+				return [0] * 167
+			return [int(x) for x in list(AllChem.GetMACCSKeysFingerprint(mol).ToBitString())]
+
+		fps = self.df[column_name].apply(get_maccs_fp)
+		fp_df = pd.DataFrame(fps.tolist(), columns=[f"{column_name}_MACCS_{i}" for i in range(167)])
+		self.df = pd.concat([self.df, fp_df], axis=1)
+
+	def _add_topological_fingerprints(self, column_name: str) -> None:
+		"""Add topological fingerprints to the DataFrame."""
+
+		def get_topological_fp(smiles):
+			if pd.isna(smiles):
+				return [0] * 2048
+			mol = Chem.MolFromSmiles(smiles)
+			if mol is None:
+				return [0] * 2048
+			return [int(x) for x in list(AllChem.GetHashedAtomPairFingerprintAsBitVect(mol, nBits=2048).ToBitString())]
+
+		fps = self.df[column_name].apply(get_topological_fp)
+		fp_df = pd.DataFrame(fps.tolist(), columns=[f"{column_name}_Topological_{i}" for i in range(2048)])
+		self.df = pd.concat([self.df, fp_df], axis=1)
+
+	def _add_atompair_fingerprints(self, column_name: str) -> None:
+		"""Add atom pair fingerprints to the DataFrame."""
+
+		def get_atompair_fp(smiles):
+			if pd.isna(smiles):
+				return [0] * 2048
+			mol = Chem.MolFromSmiles(smiles)
+			if mol is None:
+				return [0] * 2048
+			return [int(x) for x in list(AllChem.GetHashedAtomPairFingerprintAsBitVect(mol, nBits=2048).ToBitString())]
+
+		fps = self.df[column_name].apply(get_atompair_fp)
+		fp_df = pd.DataFrame(fps.tolist(), columns=[f"{column_name}_AtomPair_{i}" for i in range(2048)])
+		self.df = pd.concat([self.df, fp_df], axis=1)
+
+	def canonicalize_smiles(self, column_name: str) -> None:
+		"""
+		Convert SMILES strings to their canonical form using RDKit.
+
+		Args:
+			column_name: Name of column containing SMILES strings
+		"""
+		try:
+			# Validate SMILES strings first
+			mols = [Chem.MolFromSmiles(smiles) for smiles in self.df[column_name] if pd.notna(smiles)]
+			if not all(mols):
+				raise ValueError("Invalid SMILES strings detected in column")
+
+			# Save current state for undo
+			self.undo_stack.append(self.df.copy())
+			self.redo_stack.clear()
+
+			# Convert to canonical SMILES
+			def to_canonical(smiles):
+				if pd.isna(smiles):
+					return smiles
+				mol = Chem.MolFromSmiles(smiles)
+				return Chem.MolToSmiles(mol, canonical=True)
+
+			self.df[column_name] = self.df[column_name].apply(to_canonical)
+
+			self.update_table(self.df)
+			self.data_ready.emit(self.df)
+
+		except Exception as e:
+			# Re-raise ValueError exceptions
+			if isinstance(e, ValueError):
+				raise e
+			# Log and show other errors
+			self.show_error("RDKit Error", str(e))
+			logging.error(f"Error in SMILES canonicalization: {str(e)}")
+			raise  # Re-raise the exception to ensure test failure

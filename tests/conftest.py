@@ -1,3 +1,5 @@
+import warnings
+
 import pytest
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QApplication
@@ -44,3 +46,8 @@ def cleanup_widgets(request, qapp):
 
 	request.addfinalizer(cleanup)
 	return track_widget
+
+
+@pytest.fixture(autouse=True)
+def ignore_deprecation_warnings():
+	warnings.filterwarnings("ignore", category=DeprecationWarning)

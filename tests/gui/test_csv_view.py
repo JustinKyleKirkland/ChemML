@@ -1,5 +1,6 @@
 from unittest.mock import MagicMock
 
+import numpy as np
 import pandas as pd
 import pytest
 from PyQt5.QtCore import QPoint
@@ -13,6 +14,7 @@ from PyQt5.QtWidgets import (
 	QPushButton,
 	QTableWidget,
 )
+from rdkit import Chem
 
 from gui.csv_view import CSVView
 
@@ -63,6 +65,21 @@ def sample_df():
 	"""Create a sample DataFrame for testing."""
 	return pd.DataFrame(
 		{"numeric": [1, 2, 3, None, 5], "categorical": ["A", "B", None, "D", "E"], "binary": [0, 1, 1, 0, None]}
+	)
+
+
+@pytest.fixture
+def sample_smiles_data():
+	"""Create sample data with SMILES strings for testing."""
+	return pd.DataFrame(
+		{
+			"SMILES": [
+				"CC(=O)OC1=CC=CC=C1C(=O)O",  # Aspirin
+				"CC1=CC=C(C=C1)O",  # p-Cresol
+				"C1=CC=NC=C1",  # Pyridine
+				np.nan,  # Missing value
+			]
+		}
 	)
 
 
@@ -735,6 +752,14 @@ def test_context_menu(csv_view_with_data, qtbot, monkeypatch, cleanup_widgets):
 			self._title = title
 			cleanup_widgets(self)
 
+		def addSeparator(self):
+			# Add a separator action
+			action = MagicMock()
+			action.text = "---"  # Visual representation of separator
+			action.isSeparator = lambda: True
+			self.actions_list.append(action)
+			return action
+
 		def addAction(self, text, callback=None):
 			action = MagicMock()
 			action.text = text
@@ -822,3 +847,122 @@ def test_context_menu(csv_view_with_data, qtbot, monkeypatch, cleanup_widgets):
 	assert "Impute with Median" in menu_actions
 	assert "Impute with KNN" in menu_actions
 	assert "One-Hot Encode" in menu_actions
+
+
+def test_add_rdkit_descriptors_basic(csv_view, sample_smiles_data):
+	"""Test adding basic RDKit descriptors."""
+	csv_view.df = sample_smiles_data
+	csv_view.add_rdkit_descriptors("SMILES", descriptor_set="basic")
+
+	# Check that new columns were added
+	assert "SMILES_MW" in csv_view.df.columns
+	assert "SMILES_LogP" in csv_view.df.columns
+	assert "SMILES_TPSA" in csv_view.df.columns
+
+	# Check that values are reasonable
+	assert np.isclose(csv_view.df.loc[0, "SMILES_MW"], 180.042, atol=0.001)  # Aspirin MW
+	assert pd.isna(csv_view.df.loc[3, "SMILES_MW"])  # NaN handling
+
+
+def test_add_rdkit_descriptors_fingerprints(csv_view, sample_smiles_data):
+	"""Test adding ECFP4 fingerprints."""
+	csv_view.df = sample_smiles_data
+
+	# Test Morgan fingerprints (ECFP4)
+	csv_view.add_rdkit_descriptors("SMILES", descriptor_set="fingerprints", fp_type="morgan")
+	fp_columns = [col for col in csv_view.df.columns if col.startswith("SMILES_ECFP4_")]
+	assert len(fp_columns) == 1024
+
+	# Check that values are binary
+	fp_values = csv_view.df[fp_columns].values
+	assert set(np.unique(fp_values[~np.isnan(fp_values)])).issubset({0, 1})
+
+
+def test_add_rdkit_descriptors_invalid_smiles(csv_view):
+	"""Test handling of invalid SMILES strings."""
+	invalid_data = pd.DataFrame({"SMILES": ["CC(=O)OC1=CC=CC=C1C(=O)O", "INVALID"]})
+	csv_view.df = invalid_data
+
+	with pytest.raises(ValueError):
+		csv_view.add_rdkit_descriptors("SMILES", descriptor_set="basic")
+
+
+def test_canonicalize_smiles(csv_view):
+	"""Test SMILES canonicalization."""
+	# Test data with equivalent but differently written SMILES
+	test_data = pd.DataFrame(
+		{
+			"SMILES": [
+				"CC(=O)OC1=CC=CC=C1C(=O)O",  # Aspirin - standard
+				"O=C(C)Oc1ccccc1C(=O)O",  # Aspirin - alternative
+				"c1ccccc1",  # Benzene
+				np.nan,  # Missing value
+			]
+		}
+	)
+	csv_view.df = test_data
+
+	# Canonicalize SMILES
+	csv_view.canonicalize_smiles("SMILES")
+
+	# Check that equivalent SMILES are now identical
+	assert csv_view.df.loc[0, "SMILES"] == csv_view.df.loc[1, "SMILES"]
+
+	# Check that valid SMILES remain valid
+	assert Chem.MolFromSmiles(csv_view.df.loc[2, "SMILES"]) is not None
+
+	# Check that NaN values are preserved
+	assert pd.isna(csv_view.df.loc[3, "SMILES"])
+
+
+def test_canonicalize_invalid_smiles(csv_view):
+	"""Test handling of invalid SMILES during canonicalization."""
+	invalid_data = pd.DataFrame({"SMILES": ["CC(=O)OC1=CC=CC=C1C(=O)O", "INVALID"]})
+	csv_view.df = invalid_data
+
+	with pytest.raises(ValueError):
+		csv_view.canonicalize_smiles("SMILES")
+
+
+def test_add_rdkit_descriptors_custom(csv_view, sample_smiles_data):
+	"""Test adding custom RDKit descriptors."""
+	csv_view.df = sample_smiles_data
+	custom_descs = ["ExactMolWt", "NumRotatableBonds", "NumHAcceptors"]
+
+	csv_view.add_rdkit_descriptors("SMILES", descriptor_set="custom", custom_descriptors=custom_descs)
+
+	# Check that specified columns were added
+	for desc in custom_descs:
+		assert f"SMILES_{desc}" in csv_view.df.columns
+
+	# Check that values are reasonable
+	assert np.isclose(csv_view.df.loc[0, "SMILES_ExactMolWt"], 180.042, atol=0.001)  # Aspirin MW
+	assert pd.isna(csv_view.df.loc[3, "SMILES_ExactMolWt"])  # NaN handling
+
+
+def test_add_rdkit_descriptors_custom_invalid(csv_view, sample_smiles_data):
+	"""Test adding invalid custom RDKit descriptors."""
+	csv_view.df = sample_smiles_data
+
+	with pytest.raises(ValueError):
+		csv_view.add_rdkit_descriptors("SMILES", descriptor_set="custom", custom_descriptors=["InvalidDescriptor"])
+
+
+def test_add_rdkit_descriptors_different_fingerprints(csv_view, sample_smiles_data):
+	"""Test adding different types of fingerprints."""
+	csv_view.df = sample_smiles_data
+
+	# Test MACCS keys
+	csv_view.add_rdkit_descriptors("SMILES", descriptor_set="fingerprints", fp_type="maccs")
+	maccs_columns = [col for col in csv_view.df.columns if col.startswith("SMILES_MACCS_")]
+	assert len(maccs_columns) == 167
+
+	# Test topological fingerprints
+	csv_view.add_rdkit_descriptors("SMILES", descriptor_set="fingerprints", fp_type="topological")
+	topo_columns = [col for col in csv_view.df.columns if col.startswith("SMILES_Topological_")]
+	assert len(topo_columns) == 2048
+
+	# Test atom pair fingerprints
+	csv_view.add_rdkit_descriptors("SMILES", descriptor_set="fingerprints", fp_type="atompairs")
+	ap_columns = [col for col in csv_view.df.columns if col.startswith("SMILES_AtomPair_")]
+	assert len(ap_columns) == 2048
