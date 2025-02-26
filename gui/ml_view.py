@@ -1,3 +1,4 @@
+import ast
 import logging
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
@@ -17,11 +18,13 @@ from PyQt5.QtWidgets import (
 	QListWidget,
 	QMessageBox,
 	QPushButton,
+	QTextEdit,
 	QVBoxLayout,
 	QWidget,
 )
 
 from ml_backend.ml_backend import download_results_as_json, run_ml_methods
+from ml_backend.model_configs import MODEL_CONFIGS
 
 AVAILABLE_ML_METHODS = [
 	"Linear Regression",
@@ -61,6 +64,56 @@ class MLResult:
 	test_predictions: List[float]
 
 
+class CustomParamsDialog(QDialog):
+	"""Dialog for customizing model parameters."""
+
+	def __init__(self, model_name: str, current_params: Dict[str, Any], parent=None):
+		super().__init__(parent)
+		self.model_name = model_name
+		self.current_params = current_params
+		self.setup_ui()
+
+	def setup_ui(self):
+		layout = QVBoxLayout()
+		self.setWindowTitle(f"Customize Parameters - {self.model_name}")
+
+		# Add parameter input
+		form_layout = QFormLayout()
+		self.param_text = QLabel(
+			"Enter parameters as a Python dictionary. Example:\n" "{'max_depth': [10, 20], 'min_samples_split': [2, 5]}"
+		)
+		self.param_input = QTextEdit()
+		self.param_input.setText(str(self.current_params))
+
+		form_layout.addRow(self.param_text)
+		form_layout.addRow(self.param_input)
+
+		# Add buttons
+		button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+		button_box.accepted.connect(self.accept)
+		button_box.rejected.connect(self.reject)
+
+		layout.addLayout(form_layout)
+		layout.addWidget(button_box)
+		self.setLayout(layout)
+
+	def get_params(self) -> Dict[str, Any]:
+		"""Returns the custom parameters as a dictionary.
+
+		Returns:
+			Dict[str, Any]: The parsed parameters or the current parameters if parsing fails
+		"""
+		try:
+			params = ast.literal_eval(self.param_input.toPlainText())
+			if not isinstance(params, dict):
+				raise ValueError("Parameters must be a dictionary")
+			return params
+		except (SyntaxError, ValueError) as e:
+			# Log the error for debugging
+			logging.warning(f"Failed to parse parameters: {str(e)}")
+			return self.current_params
+
+
 class MethodSelectionWidget(QWidget):
 	"""Widget for selecting ML methods."""
 
@@ -69,23 +122,33 @@ class MethodSelectionWidget(QWidget):
 		self.setup_ui()
 
 	def setup_ui(self) -> None:
+		"""Sets up the main UI layout."""
 		layout = QHBoxLayout()
 
 		# Available methods list
 		self.available_list = self._create_list_widget("Select Machine Learning Methods:")
 		self.available_list.addItems(AVAILABLE_ML_METHODS)
 
-		# Selected methods list
+		# Selected methods list and customize button
+		selected_layout = QVBoxLayout()
 		self.selected_list = self._create_list_widget("Selected ML Methods")
+		self.customize_button = QPushButton("Customize Parameters")
+		self.customize_button.clicked.connect(self._customize_parameters)
+		selected_layout.addWidget(QLabel("Selected Methods:"))
+		selected_layout.addWidget(self.selected_list)
+		selected_layout.addWidget(self.customize_button)
 
 		# Transfer buttons
 		button_layout = self._create_transfer_buttons()
 
 		layout.addLayout(self._wrap_in_layout(self.available_list))
 		layout.addLayout(button_layout)
-		layout.addLayout(self._wrap_in_layout(self.selected_list))
+		layout.addLayout(selected_layout)
 
 		self.setLayout(layout)
+
+		# Store custom parameters
+		self.custom_params: Dict[str, Dict[str, Any]] = {}
 
 	def _create_list_widget(self, label_text: str) -> QListWidget:
 		"""Creates a labeled list widget with multi-selection."""
@@ -127,9 +190,27 @@ class MethodSelectionWidget(QWidget):
 	def _move_to_available(self) -> None:
 		self._move_items(self.selected_list, self.available_list)
 
+	def _customize_parameters(self) -> None:
+		"""Opens dialog to customize parameters for selected method."""
+		selected_items = self.selected_list.selectedItems()
+		if not selected_items:
+			QMessageBox.warning(self, "Warning", "Please select a method to customize.")
+			return
+
+		method_name = selected_items[0].text()
+		current_params = self.custom_params.get(method_name, MODEL_CONFIGS[method_name].param_grid)
+
+		dialog = CustomParamsDialog(method_name, current_params, self)
+		if dialog.exec_() == QDialog.Accepted:
+			self.custom_params[method_name] = dialog.get_params()
+
 	def get_selected_methods(self) -> List[str]:
 		"""Returns list of selected ML methods."""
 		return [self.selected_list.item(i).text() for i in range(self.selected_list.count())]
+
+	def get_custom_params(self) -> Dict[str, Dict[str, Any]]:
+		"""Returns dictionary of custom parameters for each method."""
+		return self.custom_params
 
 
 class FeatureSelectionWidget(QWidget):
@@ -339,6 +420,7 @@ class MLView(QWidget):
 				self.feature_selection.get_target_column(),
 				self.feature_selection.get_feature_columns(),
 				self.method_selection.get_selected_methods(),
+				custom_params=self.method_selection.get_custom_params(),
 			)
 
 			self._show_results_dialog(results)

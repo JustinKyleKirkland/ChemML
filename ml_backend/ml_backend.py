@@ -1,4 +1,6 @@
 import json
+import multiprocessing
+import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -8,6 +10,12 @@ from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.model_selection import GridSearchCV, train_test_split
 
 from .model_configs import MODEL_CONFIGS
+
+if hasattr(multiprocessing, "set_start_method"):
+	try:
+		multiprocessing.set_start_method("spawn")
+	except RuntimeError:
+		pass  # method already set
 
 
 @dataclass
@@ -30,9 +38,11 @@ def run_ml_methods(
 	target_column: str,
 	feature_columns: List[str],
 	selected_models: List[str],
+	custom_params: Optional[Dict[str, Dict]] = None,
 	test_size: float = 0.2,
 	random_state: int = 42,
 	cv_folds: int = 5,
+	n_jobs: int = -1,
 ) -> Dict[str, ModelResults]:
 	"""
 	Train and evaluate multiple machine learning models.
@@ -42,13 +52,19 @@ def run_ml_methods(
 		target_column: Name of the target variable column
 		feature_columns: List of feature column names
 		selected_models: List of model names to train
+		custom_params: Optional dictionary of custom parameters for each model
 		test_size: Proportion of data to use for testing
 		random_state: Random seed for reproducibility
 		cv_folds: Number of cross-validation folds
+		n_jobs: Number of jobs to run in parallel
 
 	Returns:
 		Dictionary mapping model names to their results
+
+	Raises:
+		ValueError: If invalid parameters are provided for a model
 	"""
+	custom_params = custom_params or {}
 	X = df[feature_columns]
 	y = df[target_column]
 
@@ -58,41 +74,44 @@ def run_ml_methods(
 
 	for model_name in selected_models:
 		if model_name not in MODEL_CONFIGS:
-			print(f"Warning: Model '{model_name}' not found in configurations. Skipping.")
-			continue
+			raise ValueError(f"Model '{model_name}' not found in configurations")
+
+		config = MODEL_CONFIGS[model_name]
+		model = config.model_class()
+
+		# Use custom parameters if provided, otherwise use defaults
+		param_grid = custom_params.get(model_name, config.param_grid)
 
 		try:
-			config = MODEL_CONFIGS[model_name]
-			model = config.model_class()
-
 			grid_search = GridSearchCV(
 				model,
-				config.param_grid,
+				param_grid,
 				cv=cv_folds,
 				scoring="neg_mean_squared_error",
-				n_jobs=-1,
+				n_jobs=1 if "pytest" in sys.modules else n_jobs,
 			)
 			grid_search.fit(X_train, y_train)
+		except ValueError as e:
+			# Re-raise parameter validation errors
+			if "Invalid parameter" in str(e):
+				raise ValueError(f"Invalid parameters for {model_name}: {str(e)}")
+			raise
 
-			best_model = grid_search.best_estimator_
-			train_predictions = best_model.predict(X_train)
-			test_predictions = best_model.predict(X_test)
+		best_model = grid_search.best_estimator_
+		train_predictions = best_model.predict(X_train)
+		test_predictions = best_model.predict(X_test)
 
-			results[model_name] = ModelResults(
-				best_hyperparameters=grid_search.best_params_,
-				cv_mean_score=-grid_search.best_score_,
-				cv_std_score=grid_search.cv_results_["std_test_score"][grid_search.best_index_],
-				test_predictions=test_predictions.tolist(),
-				y_test=y_test.tolist(),
-				train_mse=mean_squared_error(y_train, train_predictions),
-				test_mse=mean_squared_error(y_test, test_predictions),
-				train_r2=r2_score(y_train, train_predictions),
-				test_r2=r2_score(y_test, test_predictions),
-			)
-
-		except Exception as e:
-			print(f"Error training {model_name}: {str(e)}")
-			continue
+		results[model_name] = ModelResults(
+			best_hyperparameters=grid_search.best_params_,
+			cv_mean_score=-grid_search.best_score_,
+			cv_std_score=grid_search.cv_results_["std_test_score"][grid_search.best_index_],
+			test_predictions=test_predictions.tolist(),
+			y_test=y_test.tolist(),
+			train_mse=mean_squared_error(y_train, train_predictions),
+			test_mse=mean_squared_error(y_test, test_predictions),
+			train_r2=r2_score(y_train, train_predictions),
+			test_r2=r2_score(y_test, test_predictions),
+		)
 
 	return results
 

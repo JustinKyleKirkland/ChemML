@@ -154,9 +154,20 @@ class TestMLView:
 		]
 		assert "target" not in available_features
 
-	def test_validate_selections_empty(self, ml_view, qtbot):
+	def test_validate_selections_empty(self, ml_view, qtbot, monkeypatch):
 		"""Test validation with no selections."""
+		# Mock QMessageBox to prevent popups
+		warning_shown = False
+
+		def mock_warning(*args, **kwargs):
+			nonlocal warning_shown
+			warning_shown = True
+			return QMessageBox.Ok
+
+		monkeypatch.setattr(QMessageBox, "warning", mock_warning)
+
 		assert not ml_view._validate_selections()
+		assert warning_shown  # Verify the warning would have been shown
 
 	def test_validate_selections_complete(self, ml_view, sample_dataframe, qtbot):
 		"""Test validation with all selections made."""
