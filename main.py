@@ -7,19 +7,19 @@ from utils.logging_config import setup_logging  # Import your logging setup func
 
 
 def main():
-	# Set up logging
-	setup_logging()
+    # Set up logging
+    setup_logging()
 
-	# Create the application instance
-	app = QApplication(sys.argv)
+    # Create the application instance
+    app = QApplication(sys.argv)
 
-	# Create and show the main GUI window
-	window = CSVInteractiveApp()
-	window.show()
+    # Create and show the main GUI window
+    window = CSVInteractiveApp()
+    window.show()
 
-	# Run the application event loop
-	sys.exit(app.exec_())
+    # Run the application event loop
+    sys.exit(app.exec_())
 
 
 if __name__ == "__main__":
-	main()
+    main()
