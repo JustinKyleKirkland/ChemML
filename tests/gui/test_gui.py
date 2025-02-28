@@ -50,6 +50,15 @@ class MockMLView(QWidget):
 		super().__init__()
 		self.update_column_selection = MagicMock()
 		self.set_dataframe = MagicMock()
+		self.update_model_settings = MagicMock()
+
+
+class MockMLAdvancedView(QWidget):
+	"""Mock MLAdvancedView class."""
+
+	def __init__(self):
+		super().__init__()
+		self.settings_changed = MockSignal()
 
 
 @pytest.fixture(scope="session")
@@ -70,6 +79,7 @@ def main_window(qapp):
 	window.csv_view = MockCSVView()
 	window.plotting_widget = MockPlottingWidget()
 	window.ml_view = MockMLView()
+	window.ml_advanced_view = MockMLAdvancedView()
 
 	# Reconnect signals with mocks
 	window._connect_signals()
@@ -83,10 +93,11 @@ def main_window(qapp):
 def test_window_initialization(main_window):
 	"""Test if the main window initializes correctly."""
 	assert main_window.windowTitle() == "ChemML"
-	assert main_window.tab_widget.count() == 3
+	assert main_window.tab_widget.count() == 4
 	assert main_window.tab_widget.tabText(0) == "CSV View"
 	assert main_window.tab_widget.tabText(1) == "Plot View"
 	assert main_window.tab_widget.tabText(2) == "ML View"
+	assert main_window.tab_widget.tabText(3) == "ML Settings"
 
 
 def test_data_ready_signal_connections(main_window, qapp):

@@ -517,6 +517,7 @@ class MLView(QWidget):
 		self.logger = logging.getLogger("MLView")
 		self.df = pd.DataFrame()
 		self._results_cache: Dict[str, MLResult] = {}
+		self._model_settings: Dict[str, Dict[str, Any]] = {}
 
 		self.setup_ui()
 		self._connect_signals()
@@ -665,52 +666,66 @@ class MLView(QWidget):
 		cache_key = f"{method}_{target}_{','.join(sorted(features))}"
 		return self._results_cache.get(cache_key)
 
+	def update_model_settings(self, settings: Dict[str, Dict[str, Any]]) -> None:
+		"""Update model settings from the advanced view.
+
+		Args:
+			settings: Dictionary of model settings
+		"""
+		self._model_settings = settings.copy()
+		self.logger.debug(f"Updated model settings: {settings}")
+
 	def _run_ml_methods(self) -> None:
-		"""Runs selected ML methods and displays results."""
-		if not self._validate_selections():
-			return
+		"""Run selected ML methods with current settings."""
+		if not self.df.empty:
+			selected_methods = self.method_selection.get_selected_methods()
+			if not selected_methods:
+				self._show_warning("No Methods Selected", "Please select at least one ML method to run.")
+				return
 
-		try:
-			target = self.feature_selection.get_target_column()
-			features = self.feature_selection.get_feature_columns()
-			methods = self.method_selection.get_selected_methods()
+			target_column = self.feature_selection.get_target_column()
+			if target_column == "Select Target Column":
+				self._show_warning("No Target Selected", "Please select a target column.")
+				return
 
-			self.update_status("Running machine learning methods...")
+			selected_features = self.feature_selection.get_feature_columns()
+			if not selected_features:
+				self._show_warning("No Features Selected", "Please select at least one feature.")
+				return
+
+			# Update status
+			self.update_status("Running ML methods...")
 			self.run_button.setEnabled(False)
 
-			results: Dict[str, MLResult] = {}
-			for method in methods:
-				self.update_status(f"Processing {method}...")
-				cached_result = self._get_cached_result(method, target, features)
-				if cached_result:
-					results[method] = cached_result
-					continue
+			try:
+				# Prepare data
+				X = self.df[selected_features]
+				y = self.df[target_column]
 
-				method_results = run_ml_methods(
-					self.df,
-					target,
-					features,
-					[method],
-					custom_params=self.method_selection.get_custom_params(),
-				)
+				# Run methods with custom parameters if available
+				results = {}
+				for method in selected_methods:
+					custom_params = self._model_settings.get(method, {})
+					if custom_params:
+						self.logger.info(f"Using custom parameters for {method}: {custom_params}")
+						results[method] = run_ml_methods(X, y, [method], custom_params)[method]
+					else:
+						results[method] = run_ml_methods(X, y, [method])[method]
 
-				if method in method_results:
-					results[method] = method_results[method]
-					cache_key = f"{method}_{target}_{','.join(sorted(features))}"
-					self._results_cache[cache_key] = method_results[method]
-
-			if results:
+				# Cache results and update UI
+				self._results_cache = results
 				self.plot_button.setEnabled(True)
 				self._show_results_dialog(results)
-				self.update_status("Analysis complete. You can now plot the results.")
-			else:
-				self._show_warning("No results were generated.")
+				self.update_status("ML methods completed successfully.")
 
-		except Exception as e:
-			self.logger.error(f"Error running ML methods: {e}", exc_info=True)
-			self._show_warning(f"Error running ML methods: {str(e)}")
-		finally:
-			self.run_button.setEnabled(True)
+			except Exception as e:
+				self.logger.error(f"Error running ML methods: {str(e)}")
+				self._show_warning("Error", f"Failed to run ML methods: {str(e)}")
+				self.update_status("Error running ML methods.")
+			finally:
+				self.run_button.setEnabled(True)
+		else:
+			self._show_warning("No Data", "Please load data before running ML methods.")
 
 	def _show_results_dialog(self, results: Dict[str, MLResult]) -> None:
 		"""Shows dialog with ML results and save option."""
