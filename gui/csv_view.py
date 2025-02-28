@@ -1,10 +1,12 @@
+import io
 import logging
-from typing import List, Tuple
+from functools import lru_cache
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 from PyQt5.QtCore import QPoint, Qt, pyqtSignal
-from PyQt5.QtGui import QBrush, QFontMetrics
+from PyQt5.QtGui import QBrush, QFontMetrics, QPixmap
 from PyQt5.QtWidgets import (
 	QComboBox,
 	QDialog,
@@ -25,10 +27,54 @@ from PyQt5.QtWidgets import (
 	QWidget,
 )
 from rdkit import Chem
-from rdkit.Chem import AllChem, Descriptors
+from rdkit.Chem import AllChem, Descriptors, Draw
 
 from utils.color_assets import ERROR_COLOR, NAN_COLOR, NON_NUM_COLOR
 from utils.data_utils import impute_values, one_hot_encode, validate_csv
+
+
+# Cache molecule objects to avoid repeated parsing
+@lru_cache(maxsize=1024)
+def get_mol_from_smiles(smiles: str) -> Optional[Chem.Mol]:
+	"""Cache and return RDKit molecule objects."""
+	if pd.isna(smiles):
+		return None
+	return Chem.MolFromSmiles(smiles)
+
+
+class MoleculeTooltip(QLabel):
+	"""Custom tooltip widget for displaying molecule images."""
+
+	def __init__(self, parent=None):
+		super().__init__(parent)
+		self.setWindowFlags(Qt.ToolTip)
+		self.setAttribute(Qt.WA_TranslucentBackground)
+		self.setStyleSheet("QLabel { background-color: white; padding: 2px; border: 1px solid gray; }")
+		self._pixmap_cache: Dict[str, QPixmap] = {}
+
+	def show_molecule(self, smiles: str, pos: QPoint) -> None:
+		"""Display molecule image at given position with caching."""
+		if smiles in self._pixmap_cache:
+			pixmap = self._pixmap_cache[smiles]
+		else:
+			mol = get_mol_from_smiles(smiles)
+			if not mol:
+				return
+
+			img = Draw.MolToImage(mol)
+			with io.BytesIO() as bio:
+				img.save(bio, format="PNG")
+				pixmap = QPixmap()
+				pixmap.loadFromData(bio.getvalue())
+
+			if pixmap.width() > 300:
+				pixmap = pixmap.scaledToWidth(300)
+			self._pixmap_cache[smiles] = pixmap
+
+		self.setPixmap(pixmap)
+		self.adjustSize()
+		self.move(pos)
+		self.show()
 
 
 class CSVView(QWidget):
@@ -83,6 +129,10 @@ class CSVView(QWidget):
 	    canonicalize_smiles(self, column_name: str) -> None:
 
 	    show_descriptor_selector(self, column_name: str) -> None:
+
+	    eventFilter(self, source, event) -> bool:
+
+	    _contains_valid_smiles(self, column_name: str) -> bool:
 	"""
 
 	data_ready = pyqtSignal(pd.DataFrame)
@@ -252,7 +302,112 @@ class CSVView(QWidget):
 		logging.debug("Creating table widget.")
 		table_widget = QTableWidget(self)
 		table_widget.setSortingEnabled(True)
+
+		# Add event filter for tooltips
+		table_widget.setMouseTracking(True)
+		table_widget.viewport().installEventFilter(self)
+
 		return table_widget
+
+	def eventFilter(self, source, event) -> bool:
+		"""
+		Filter events to show molecule tooltips on hover.
+
+		Args:
+		    source: The source widget of the event
+		    event: The event to filter
+
+		Returns:
+		    bool: True if the event was handled, False otherwise
+		"""
+		if source is self.table_widget.viewport() and event.type() == event.MouseMove:
+			# Get item under cursor
+			pos = event.pos()
+			item = self.table_widget.itemAt(pos)
+
+			if item is not None:
+				try:
+					column_name = self.df.columns[item.column()]
+					logging.debug(f"Mouse over column: {column_name}")
+
+					# Check if this is a SMILES column (contains valid SMILES strings)
+					if self.df[column_name].dtype == "object":
+						is_smiles = self._contains_valid_smiles(column_name)
+						logging.debug(f"Column {column_name} contains valid SMILES: {is_smiles}")
+
+						if is_smiles:
+							smiles = item.text()
+							if smiles and pd.notna(smiles):
+								logging.debug(f"Processing SMILES: {smiles}")
+
+								# Generate molecule image
+								mol = Chem.MolFromSmiles(smiles)
+								if mol:
+									img = Draw.MolToImage(mol)
+
+									# Convert PIL image to QPixmap
+									with io.BytesIO() as bio:
+										img.save(bio, format="PNG")
+										pixmap = QPixmap()
+										pixmap.loadFromData(bio.getvalue())
+
+									# Scale pixmap if too large
+									if pixmap.width() > 300:
+										pixmap = pixmap.scaledToWidth(300)
+
+									# Create or update tooltip
+									if not hasattr(self, "molecule_tooltip"):
+										self.molecule_tooltip = MoleculeTooltip()
+
+									self.molecule_tooltip.show_molecule(smiles, pos)
+									return True
+								else:
+									logging.debug(f"Failed to create molecule from SMILES: {smiles}")
+							else:
+								logging.debug("Empty or NaN SMILES value")
+
+				except Exception as e:
+					logging.debug(f"Error in tooltip generation: {str(e)}")
+					if hasattr(self, "molecule_tooltip"):
+						self.molecule_tooltip.hide()
+
+			else:
+				# Hide tooltip when not over an item
+				if hasattr(self, "molecule_tooltip"):
+					self.molecule_tooltip.hide()
+
+		elif event.type() == event.Leave:
+			# Hide tooltip when mouse leaves the widget
+			if hasattr(self, "molecule_tooltip"):
+				self.molecule_tooltip.hide()
+
+		return super().eventFilter(source, event)
+
+	def _contains_valid_smiles(self, column_name: str) -> bool:
+		"""
+		Check if a column contains valid SMILES strings.
+
+		Args:
+		    column_name: Name of the column to check
+
+		Returns:
+		    bool: True if the column contains valid SMILES strings
+		"""
+		try:
+			# Check first few non-null values
+			sample = self.df[column_name].dropna().head()
+			if len(sample) == 0:
+				return False
+
+			valid_count = sum(1 for smiles in sample if Chem.MolFromSmiles(smiles) is not None)
+			# Consider it a SMILES column if at least 80% of samples are valid
+			is_valid = (valid_count / len(sample)) >= 0.8
+
+			logging.debug(f"SMILES validation for {column_name}: {valid_count}/{len(sample)} valid structures")
+			return is_valid
+		except Exception as e:
+			logging.debug(f"Error validating SMILES in column {column_name}: {str(e)}")
+			return False
 
 	def create_filter_layout(self) -> QHBoxLayout:
 		"""
@@ -542,36 +697,41 @@ class CSVView(QWidget):
 		return one_hot_menu
 
 	def update_table(self, df: pd.DataFrame) -> None:
-		"""Update the table widget with new DataFrame data."""
+		"""Update the table widget with new DataFrame data efficiently."""
 		try:
 			self.table_widget.setRowCount(len(df))
 			self.table_widget.setColumnCount(len(df.columns))
 			self.table_widget.setHorizontalHeaderLabels(df.columns)
 
-			for i, (_, row) in enumerate(df.iterrows()):
-				for j, value in enumerate(row):
-					item = QTableWidgetItem()
+			# Pre-calculate SMILES columns for efficiency
+			smiles_columns = {col: self._contains_valid_smiles(col) for col in df.columns}
 
-					# Check if value is NaN
-					if pd.isna(value):
-						item.setBackground(QBrush(NAN_COLOR))
-						item.setText("")
-					else:
-						# Format number to string with reasonable precision
-						if isinstance(value, (int, float, np.number)):
-							if isinstance(value, (int, np.integer)):
-								text = str(value)
-							else:
-								text = f"{value:.6g}"
-							item.setData(Qt.DisplayRole, float(value))
+			# Process data in chunks for better performance
+			chunk_size = 1000
+			for start_idx in range(0, len(df), chunk_size):
+				end_idx = min(start_idx + chunk_size, len(df))
+				chunk = df.iloc[start_idx:end_idx]
+
+				for i, (_, row) in enumerate(chunk.iterrows(), start=start_idx):
+					for j, value in enumerate(row):
+						item = QTableWidgetItem()
+
+						if pd.isna(value):
+							item.setBackground(QBrush(NAN_COLOR))
+							item.setText("")
 						else:
-							text = str(value)
-							item.setBackground(QBrush(NON_NUM_COLOR))
-						item.setText(text)
+							if isinstance(value, (int, float, np.number)):
+								text = str(int(value)) if isinstance(value, (int, np.integer)) else f"{value:.6g}"
+								item.setData(Qt.DisplayRole, float(value))
+							else:
+								text = str(value)
+								if not smiles_columns[df.columns[j]]:
+									item.setBackground(QBrush(NON_NUM_COLOR))
+							item.setText(text)
 
-					self.table_widget.setItem(i, j, item)
+						self.table_widget.setItem(i, j, item)
 
-			# Resize columns to content
+			# Optimize column widths
 			self.table_widget.resizeColumnsToContents()
 
 		except Exception as e:
@@ -579,97 +739,72 @@ class CSVView(QWidget):
 			logging.error(f"Error updating table: {str(e)}")
 
 	def filter_data(self) -> None:
-		"""
-		Apply a filter to the data based on the selected column, condition, and value.
-
-		Returns:
-		    None
-
-		Raises:
-		    Exception: If an error occurs while applying the filter.
-
-		Warnings:
-		    If the filter criteria are missing, a warning is logged and an error message is displayed.
-
-		Logging:
-		    - Logs the filter being applied with the selected column, condition, and value.
-		    - Logs an error if an exception occurs while applying the filter.
-		    - Logs a warning if the filter criteria are missing.
-
-		Stack:
-		    - Appends a copy of the current DataFrame to the undo stack.
-		    - Clears the redo stack.
-
-		Table Update:
-		    - Updates the table with the filtered DataFrame.
-
-		Error Handling:
-		    - Displays an error message if an exception occurs while applying the filter.
-		"""
+		"""Apply a filter to the data based on the selected column, condition, and value."""
 		column_name = self.column_dropdown.currentText()
 		condition = self.condition_dropdown.currentText()
 		value = self.value_edit.text()
 
-		if column_name and condition and value:
-			try:
-				logging.info(f"Applying filter: Column='{column_name}', Condition='{condition}', Value='{value}'")
-				self.undo_stack.append(self.df.copy())
-				self.redo_stack.clear()
-
-				filtered_df = self.apply_filter(column_name, condition, value)
-				self.update_table(filtered_df)
-				logging.info("Filter applied successfully.")
-			except Exception as e:
-				self.show_error_message("Error applying filter", str(e))
-				logging.error(f"Error applying filter: {e}")
-		else:
+		if not all([column_name, condition, value]):
 			logging.warning("Filter criteria missing. Please select a column, condition, and value.")
 			self.show_error_message("Invalid Filter", "Please select a column, condition, and value.")
+			return
 
-	# TODO: Fix filter function
-	def apply_filter(self, column_name: str, condition: str, value: str) -> pd.DataFrame:
-		"""
-		Apply a filter to the DataFrame based on the given column name, condition, and value.
+		try:
+			logging.info(f"Applying filter: Column='{column_name}', Condition='{condition}', Value='{value}'")
+			self.undo_stack.append(self.df.copy())
+			self.redo_stack.clear()
 
-		Parameters:
-		    column_name (str): The name of the column to filter on.
-		    condition (str): The condition to apply for the filter. Valid options are "Contains", "Equals",
-		    "Starts with", "Ends with", ">=", "<=", ">", "<".
-		    value (str): The value to compare against for the filter.
+			filtered_df = self.apply_filter(column_name, condition, value)
+			if filtered_df is not None:
+				self.df = filtered_df
+				self.update_table(self.df)
+				logging.info("Filter applied successfully.")
+			else:
+				self.show_error_message("Filter Error", "No rows match the filter criteria.")
+		except Exception as e:
+			self.show_error_message("Error applying filter", str(e))
+			logging.error(f"Error applying filter: {e}")
 
-		Returns:
-		    pd.DataFrame: The filtered DataFrame.
+	def apply_filter(self, column_name: str, condition: str, value: str) -> Optional[pd.DataFrame]:
+		"""Apply a filter to the DataFrame based on the given criteria."""
+		try:
+			if condition == "Contains":
+				mask = self.df[column_name].str.contains(value, na=False)
+			elif condition == "Equals":
+				# Try numeric comparison first, fall back to string comparison
+				try:
+					numeric_value = float(value)
+					mask = self.df[column_name].astype(float) == numeric_value
+				except ValueError:
+					mask = self.df[column_name].astype(str) == value
+			elif condition == "Starts with":
+				mask = self.df[column_name].str.startswith(value, na=False)
+			elif condition == "Ends with":
+				mask = self.df[column_name].str.endswith(value, na=False)
+			elif condition in (">=", "<=", ">", "<"):
+				try:
+					numeric_column = pd.to_numeric(self.df[column_name], errors="coerce")
+					numeric_value = float(value)
 
-		Raises:
-		    ValueError: If an invalid filter condition is provided or if the column or value cannot be converted
-		    to float when using numeric conditions.
+					if condition == ">=":
+						mask = numeric_column >= numeric_value
+					elif condition == "<=":
+						mask = numeric_column <= numeric_value
+					elif condition == ">":
+						mask = numeric_column > numeric_value
+					else:  # <
+						mask = numeric_column < numeric_value
+				except ValueError as e:
+					raise ValueError(f"Could not convert column '{column_name}' or value '{value}' to float: {e}")
+			else:
+				raise ValueError("Invalid filter condition")
 
-		"""
-		if condition == "Contains":
-			return self.df[self.df[column_name].str.contains(value)]
-		elif condition == "Equals":
-			return self.df[self.df[column_name] == value]
-		elif condition == "Starts with":
-			return self.df[self.df[column_name].str.startswith(value)]
-		elif condition == "Ends with":
-			return self.df[self.df[column_name].str.endswith(value)]
-		elif condition in (">=", "<=", ">", "<"):
-			try:
-				numeric_column = self.df[column_name].astype(float)
-				numeric_value = float(value)
-			except ValueError as e:
-				raise ValueError(f"Could not convert column '{column_name}' or value '{value}' to float: {e}")
+			filtered_df = self.df[mask]
+			return filtered_df if not filtered_df.empty else None
 
-			if condition == ">=":
-				return self.df[numeric_column >= numeric_value]
-			elif condition == "<=":
-				return self.df[numeric_column <= numeric_value]
-			elif condition == ">":
-				return self.df[numeric_column > numeric_value]
-			elif condition == "<":
-				return self.df[numeric_column < numeric_value]
-		else:
-			raise ValueError("Invalid filter condition")
+		except Exception as e:
+			logging.error(f"Error in filter application: {e}")
+			raise
 
 	def copy_selected_values(self) -> None:
 		"""
@@ -922,21 +1057,17 @@ class CSVView(QWidget):
 		custom_descriptors: List[str] = None,
 		fp_type: str = "morgan",
 	) -> None:
-		"""
-		Add RDKit descriptors or fingerprints for molecules in a SMILES column.
-		Skips descriptors that raise errors during calculation.
-		"""
+		"""Add RDKit descriptors or fingerprints for molecules in a SMILES column."""
 		try:
 			# Validate custom descriptors first
 			if descriptor_set == "custom":
 				if not custom_descriptors:
 					raise ValueError("No descriptors specified for custom descriptor set")
-				for desc_name in custom_descriptors:
-					if not hasattr(Descriptors, desc_name):
-						raise ValueError(f"Invalid descriptor name: {desc_name}")
+				if not all(hasattr(Descriptors, desc_name) for desc_name in custom_descriptors):
+					raise ValueError("Invalid descriptor name found")
 
-			# Then validate SMILES
-			mols = [Chem.MolFromSmiles(smiles) for smiles in self.df[column_name] if pd.notna(smiles)]
+			# Convert SMILES to molecules using cached function
+			mols = [get_mol_from_smiles(smiles) for smiles in self.df[column_name] if pd.notna(smiles)]
 			if not all(mols):
 				raise ValueError("Invalid SMILES strings detected in column")
 
@@ -945,141 +1076,144 @@ class CSVView(QWidget):
 			self.redo_stack.clear()
 
 			if descriptor_set == "fingerprints":
-				if fp_type == "morgan":
-					self._add_morgan_fingerprints(column_name, radius=2)
-				elif fp_type == "morgan_r3":
-					self._add_morgan_fingerprints(column_name, radius=3)
-				elif fp_type == "maccs":
-					self._add_maccs_fingerprints(column_name)
-				elif fp_type == "topological":
-					self._add_topological_fingerprints(column_name)
-				elif fp_type == "atompairs":
-					self._add_atompair_fingerprints(column_name)
-
+				self._add_fingerprints(column_name, fp_type)
 			elif descriptor_set == "basic":
-				# Add basic descriptors
-				self.df[f"{column_name}_MW"] = self.df[column_name].apply(
-					lambda x: Descriptors.ExactMolWt(Chem.MolFromSmiles(x)) if pd.notna(x) else None
-				)
-				self.df[f"{column_name}_LogP"] = self.df[column_name].apply(
-					lambda x: Descriptors.MolLogP(Chem.MolFromSmiles(x)) if pd.notna(x) else None
-				)
-				self.df[f"{column_name}_TPSA"] = self.df[column_name].apply(
-					lambda x: Descriptors.TPSA(Chem.MolFromSmiles(x)) if pd.notna(x) else None
-				)
-
+				self._add_basic_descriptors(column_name)
 			elif descriptor_set == "all":
-				# Calculate all available descriptors with error handling
-				desc_names = [desc_name[0] for desc_name in Descriptors._descList]
-				for desc_name in desc_names:
-					try:
-						desc_func = getattr(Descriptors, desc_name)
-						# Test descriptor on first valid molecule
-						test_mol = next(mol for mol in mols if mol is not None)
-						_ = desc_func(test_mol)  # Test calculation
-
-						# If test passes, calculate for all molecules
-						self.df[f"{column_name}_{desc_name}"] = self.df[column_name].apply(
-							lambda x: desc_func(Chem.MolFromSmiles(x)) if pd.notna(x) else None
-						)
-					except Exception as calc_error:
-						logging.warning(f"Skipping descriptor {desc_name} due to error: {str(calc_error)}")
-						continue
-
+				self._add_all_descriptors(column_name)
 			elif descriptor_set == "custom":
-				# Calculate selected descriptors with error handling
-				successful_descs = []
-				for desc_name in custom_descriptors:
-					try:
-						desc_func = getattr(Descriptors, desc_name)
-						# Test descriptor on first valid molecule
-						test_mol = next(mol for mol in mols if mol is not None)
-						_ = desc_func(test_mol)  # Test calculation
-
-						# If test passes, calculate for all molecules
-						self.df[f"{column_name}_{desc_name}"] = self.df[column_name].apply(
-							lambda x: desc_func(Chem.MolFromSmiles(x)) if pd.notna(x) else None
-						)
-						successful_descs.append(desc_name)
-					except Exception as calc_error:
-						logging.warning(f"Skipping descriptor {desc_name} due to error: {str(calc_error)}")
-						continue
-
-				if not successful_descs:
-					raise ValueError("No valid descriptors could be calculated")
+				self._add_custom_descriptors(column_name, custom_descriptors)
 
 			self.update_table(self.df)
 			self.data_ready.emit(self.df)
 
 		except Exception as e:
-			# Re-raise ValueError exceptions
 			if isinstance(e, ValueError):
 				raise e
-			# Log and show other errors
 			self.show_error("RDKit Error", str(e))
 			logging.error(f"Error in RDKit processing: {str(e)}")
-			raise  # Re-raise the exception to ensure test failure
+			raise
+
+	def _add_basic_descriptors(self, column_name: str) -> None:
+		"""Add basic molecular descriptors efficiently."""
+		descriptors = {"MW": Descriptors.ExactMolWt, "LogP": Descriptors.MolLogP, "TPSA": Descriptors.TPSA}
+
+		for desc_name, desc_func in descriptors.items():
+			self.df[f"{column_name}_{desc_name}"] = self.df[column_name].apply(
+				lambda x: desc_func(get_mol_from_smiles(x)) if pd.notna(x) else None
+			)
+
+	def _add_fingerprints(self, column_name: str, fp_type: str) -> None:
+		"""Add molecular fingerprints with optimized computation."""
+		if fp_type == "morgan":
+			self._add_morgan_fingerprints(column_name, radius=2)
+		elif fp_type == "morgan_r3":
+			self._add_morgan_fingerprints(column_name, radius=3)
+		elif fp_type == "maccs":
+			self._add_maccs_fingerprints(column_name)
+		elif fp_type == "topological":
+			self._add_topological_fingerprints(column_name)
+		elif fp_type == "atompairs":
+			self._add_atompair_fingerprints(column_name)
 
 	def _add_morgan_fingerprints(self, column_name: str, radius: int = 2) -> None:
-		"""Add Morgan fingerprints to the DataFrame."""
+		"""Add Morgan fingerprints efficiently."""
 
-		def get_morgan_fp(smiles, radius):
-			if pd.isna(smiles):
-				return [0] * 1024
-			mol = Chem.MolFromSmiles(smiles)
+		def get_morgan_fp(smiles: str) -> List[int]:
+			mol = get_mol_from_smiles(smiles)
 			if mol is None:
 				return [0] * 1024
-			return [int(x) for x in list(AllChem.GetMorganFingerprintAsBitVect(mol, radius, 1024).ToBitString())]
+			return [int(x) for x in AllChem.GetMorganFingerprintAsBitVect(mol, radius, 1024).ToBitString()]
 
-		fps = self.df[column_name].apply(lambda x: get_morgan_fp(x, radius))
-		prefix = f"{column_name}_ECFP{radius*2}"
-		fp_df = pd.DataFrame(fps.tolist(), columns=[f"{prefix}_{i}" for i in range(1024)])
-		self.df = pd.concat([self.df, fp_df], axis=1)
+		fps = pd.DataFrame(
+			self.df[column_name].apply(get_morgan_fp).tolist(),
+			columns=[f"{column_name}_ECFP{radius*2}_{i}" for i in range(1024)],
+		)
+		self.df = pd.concat([self.df, fps], axis=1)
 
 	def _add_maccs_fingerprints(self, column_name: str) -> None:
-		"""Add MACCS keys fingerprints to the DataFrame."""
+		"""Add MACCS keys fingerprints efficiently."""
 
-		def get_maccs_fp(smiles):
-			if pd.isna(smiles):
-				return [0] * 167
-			mol = Chem.MolFromSmiles(smiles)
+		def get_maccs_fp(smiles: str) -> List[int]:
+			mol = get_mol_from_smiles(smiles)
 			if mol is None:
 				return [0] * 167
-			return [int(x) for x in list(AllChem.GetMACCSKeysFingerprint(mol).ToBitString())]
+			return [int(x) for x in AllChem.GetMACCSKeysFingerprint(mol).ToBitString()]
 
-		fps = self.df[column_name].apply(get_maccs_fp)
-		fp_df = pd.DataFrame(fps.tolist(), columns=[f"{column_name}_MACCS_{i}" for i in range(167)])
-		self.df = pd.concat([self.df, fp_df], axis=1)
+		fps = pd.DataFrame(
+			self.df[column_name].apply(get_maccs_fp).tolist(), columns=[f"{column_name}_MACCS_{i}" for i in range(167)]
+		)
+		self.df = pd.concat([self.df, fps], axis=1)
 
 	def _add_topological_fingerprints(self, column_name: str) -> None:
-		"""Add topological fingerprints to the DataFrame."""
+		"""Add topological fingerprints efficiently."""
 
-		def get_topological_fp(smiles):
-			if pd.isna(smiles):
-				return [0] * 2048
-			mol = Chem.MolFromSmiles(smiles)
+		def get_topological_fp(smiles: str) -> List[int]:
+			mol = get_mol_from_smiles(smiles)
 			if mol is None:
 				return [0] * 2048
-			return [int(x) for x in list(AllChem.GetHashedAtomPairFingerprintAsBitVect(mol, nBits=2048).ToBitString())]
+			return [int(x) for x in AllChem.GetHashedAtomPairFingerprintAsBitVect(mol, nBits=2048).ToBitString()]
 
-		fps = self.df[column_name].apply(get_topological_fp)
-		fp_df = pd.DataFrame(fps.tolist(), columns=[f"{column_name}_Topological_{i}" for i in range(2048)])
-		self.df = pd.concat([self.df, fp_df], axis=1)
+		fps = pd.DataFrame(
+			self.df[column_name].apply(get_topological_fp).tolist(),
+			columns=[f"{column_name}_Topological_{i}" for i in range(2048)],
+		)
+		self.df = pd.concat([self.df, fps], axis=1)
 
 	def _add_atompair_fingerprints(self, column_name: str) -> None:
-		"""Add atom pair fingerprints to the DataFrame."""
+		"""Add atom pair fingerprints efficiently."""
 
-		def get_atompair_fp(smiles):
-			if pd.isna(smiles):
-				return [0] * 2048
-			mol = Chem.MolFromSmiles(smiles)
+		def get_atompair_fp(smiles: str) -> List[int]:
+			mol = get_mol_from_smiles(smiles)
 			if mol is None:
 				return [0] * 2048
-			return [int(x) for x in list(AllChem.GetHashedAtomPairFingerprintAsBitVect(mol, nBits=2048).ToBitString())]
+			return [int(x) for x in AllChem.GetHashedAtomPairFingerprintAsBitVect(mol, nBits=2048).ToBitString()]
 
-		fps = self.df[column_name].apply(get_atompair_fp)
-		fp_df = pd.DataFrame(fps.tolist(), columns=[f"{column_name}_AtomPair_{i}" for i in range(2048)])
-		self.df = pd.concat([self.df, fp_df], axis=1)
+		fps = pd.DataFrame(
+			self.df[column_name].apply(get_atompair_fp).tolist(),
+			columns=[f"{column_name}_AtomPair_{i}" for i in range(2048)],
+		)
+		self.df = pd.concat([self.df, fps], axis=1)
+
+	def _add_all_descriptors(self, column_name: str) -> None:
+		"""Add all available descriptors efficiently."""
+		desc_names = [desc_name[0] for desc_name in Descriptors._descList]
+
+		# Test descriptors on first valid molecule
+		test_mol = next(
+			mol
+			for mol in (get_mol_from_smiles(smiles) for smiles in self.df[column_name] if pd.notna(smiles))
+			if mol is not None
+		)
+
+		# Filter descriptors that work with test molecule
+		valid_descriptors = {}
+		for desc_name in desc_names:
+			try:
+				desc_func = getattr(Descriptors, desc_name)
+				_ = desc_func(test_mol)
+				valid_descriptors[desc_name] = desc_func
+			except Exception as e:
+				logging.warning(f"Skipping descriptor {desc_name} due to error: {str(e)}")
+				continue
+
+		# Calculate descriptors in batches
+		for desc_name, desc_func in valid_descriptors.items():
+			self.df[f"{column_name}_{desc_name}"] = self.df[column_name].apply(
+				lambda x: desc_func(get_mol_from_smiles(x)) if pd.notna(x) else None
+			)
+
+	def _add_custom_descriptors(self, column_name: str, custom_descriptors: List[str]) -> None:
+		"""Add custom descriptors efficiently."""
+		valid_descriptors = {}
+		for desc_name in custom_descriptors:
+			desc_func = getattr(Descriptors, desc_name)
+			valid_descriptors[desc_name] = desc_func
+
+		for desc_name, desc_func in valid_descriptors.items():
+			self.df[f"{column_name}_{desc_name}"] = self.df[column_name].apply(
+				lambda x: desc_func(get_mol_from_smiles(x)) if pd.notna(x) else None
+			)
 
 	def canonicalize_smiles(self, column_name: str) -> None:
 		"""
