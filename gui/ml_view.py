@@ -20,6 +20,7 @@ from PyQt5.QtWidgets import (
 	QLabel,
 	QListWidget,
 	QMessageBox,
+	QProgressBar,
 	QPushButton,
 	QScrollArea,
 	QStatusBar,
@@ -548,6 +549,23 @@ class MLView(QWidget):
 		content_layout.addWidget(self.feature_selection)
 		content_layout.addWidget(self.method_selection)
 
+		# Create progress bar
+		self.progress_bar = QProgressBar()
+		self.progress_bar.setVisible(False)
+		self.progress_bar.setStyleSheet("""
+			QProgressBar {
+				border: 1px solid #cccccc;
+				border-radius: 4px;
+				text-align: center;
+				height: 20px;
+			}
+			QProgressBar::chunk {
+				background-color: #007bff;
+				border-radius: 3px;
+			}
+		""")
+		content_layout.addWidget(self.progress_bar)
+
 		# Create action buttons container
 		button_container = QWidget()
 		button_layout = QHBoxLayout()
@@ -655,11 +673,11 @@ class MLView(QWidget):
 
 		return True
 
-	def _show_warning(self, message: str) -> None:
+	def _show_warning(self, message: str, title: str = "Warning") -> None:
 		"""Shows a warning message box and updates status."""
 		self.logger.warning(message)
 		self.update_status(f"Warning: {message}")
-		QMessageBox.warning(self, "Warning", message)
+		QMessageBox.warning(self, title, message)
 
 	def _get_cached_result(self, method: str, target: str, features: List[str]) -> Optional[MLResult]:
 		"""Returns cached result for a method and feature set."""
@@ -693,24 +711,41 @@ class MLView(QWidget):
 				self._show_warning("No Features Selected", "Please select at least one feature.")
 				return
 
-			# Update status
+			# Update status and show progress bar
 			self.update_status("Running ML methods...")
 			self.run_button.setEnabled(False)
+			self.progress_bar.setVisible(True)
+			self.progress_bar.setRange(0, len(selected_methods))
+			self.progress_bar.setValue(0)
 
 			try:
-				# Prepare data
-				X = self.df[selected_features]
-				y = self.df[target_column]
-
 				# Run methods with custom parameters if available
 				results = {}
-				for method in selected_methods:
+				for i, method in enumerate(selected_methods, 1):
 					custom_params = self._model_settings.get(method, {})
 					if custom_params:
 						self.logger.info(f"Using custom parameters for {method}: {custom_params}")
-						results[method] = run_ml_methods(X, y, [method], custom_params)[method]
+						method_results = run_ml_methods(
+							df=self.df,
+							target_column=target_column,
+							feature_columns=selected_features,
+							selected_models=[method],
+							custom_params=custom_params,
+						)
+						results[method] = method_results[method]
 					else:
-						results[method] = run_ml_methods(X, y, [method])[method]
+						method_results = run_ml_methods(
+							df=self.df,
+							target_column=target_column,
+							feature_columns=selected_features,
+							selected_models=[method],
+							custom_params={},
+						)
+						results[method] = method_results[method]
+
+					# Update progress bar
+					self.progress_bar.setValue(i)
+					self.update_status(f"Running ML methods... ({i}/{len(selected_methods)})")
 
 				# Cache results and update UI
 				self._results_cache = results
@@ -724,6 +759,7 @@ class MLView(QWidget):
 				self.update_status("Error running ML methods.")
 			finally:
 				self.run_button.setEnabled(True)
+				self.progress_bar.setVisible(False)
 		else:
 			self._show_warning("No Data", "Please load data before running ML methods.")
 
@@ -740,7 +776,7 @@ class MLView(QWidget):
 		msg_box.setText(result_str)
 
 		save_button = msg_box.addButton("Save All Results", QMessageBox.ActionRole)
-		close_button = msg_box.addButton("Close", QMessageBox.RejectRole)
+		msg_box.addButton("Close", QMessageBox.RejectRole)
 
 		msg_box.exec_()
 
@@ -853,10 +889,10 @@ class MLView(QWidget):
 		"""Creates an improved scatter plot comparing actual vs predicted values."""
 		# Set the style
 		sns.set_style("whitegrid")
-		sns.set_context("notebook", font_scale=1.2)
+		sns.set_context("notebook", font_scale=1.5)
 
 		# Create figure with improved aesthetics
-		plt.figure(figsize=(10, 6))
+		plt.figure(figsize=(12, 8))
 
 		# Calculate the perfect prediction line
 		min_val = min(min(result.y_test), min(result.test_predictions))
@@ -867,25 +903,47 @@ class MLView(QWidget):
 		plt.plot(perfect_line, perfect_line, "--", color="#ff4d4d", label="Perfect Prediction", alpha=0.5, linewidth=2)
 
 		# Create scatter plot with seaborn
-		sns.scatterplot(x=result.y_test, y=result.test_predictions, alpha=0.6, label="Test Data", color="#007bff", s=80)
+		sns.scatterplot(
+			x=result.y_test, y=result.test_predictions, alpha=0.6, label="Test Data", color="#007bff", s=100
+		)
 
 		# Customize the plot
 		plt.xlabel("Actual Values", fontsize=12, fontweight="bold")
 		plt.ylabel("Predicted Values", fontsize=12, fontweight="bold")
-		plt.title(f"{method}\nActual vs Predicted Values", fontsize=14, pad=20, fontweight="bold")
+		plt.title(f"{method}\nActual vs Predicted Values", fontsize=16, pad=20, fontweight="bold")
 
-		# Enhance the legend
-		plt.legend(frameon=True, fancybox=True, shadow=True, fontsize=10, bbox_to_anchor=(1.02, 1), loc="upper left")
+		# Enhance the legend with larger font and box
+		legend = plt.legend(
+			frameon=True,
+			fancybox=True,
+			shadow=True,
+			fontsize=11,
+			bbox_to_anchor=(1.02, 1),
+			loc="upper left",
+			edgecolor="#cccccc",
+			facecolor="white",
+			markerscale=1.5,
+		)
+		# Set transparency for the legend box
+		legend.get_frame().set_alpha(0.9)
 
-		# Add R² score text with better styling
+		# Add R² score text with better styling and larger box
 		plt.text(
 			0.05,
-			0.95,
-			f"R² Score: {result.test_r2:.4f}",
+			0.90,
+			f"R² Score: {result.test_r2:.2f}",
 			transform=plt.gca().transAxes,
-			bbox=dict(facecolor="white", alpha=0.9, edgecolor="#cccccc", boxstyle="round,pad=0.5"),
-			fontsize=11,
+			bbox=dict(
+				facecolor="white",
+				alpha=0.9,
+				edgecolor="#cccccc",
+				boxstyle="round,pad=1.0",
+				mutation_scale=2.0,
+				linewidth=2,
+			),
+			fontsize=12,
 			fontweight="bold",
+			verticalalignment="center",
 		)
 
 		# Adjust layout to prevent text cutoff
