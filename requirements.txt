@@ -1,3 +1,4 @@
+altgraph==0.17.4
 autopep8==2.3.1
 cfgv==3.4.0
 contourpy==1.2.1
@@ -10,6 +11,7 @@ identify==2.6.8
 iniconfig==2.0.0
 joblib==1.4.2
 kiwisolver==1.4.5
+macholib==1.16.3
 matplotlib==3.9.1.post1
 mordred==1.2.0
 mypy==1.15.0
@@ -23,6 +25,8 @@ pillow==10.4.0
 platformdirs==4.3.6
 pluggy==1.5.0
 pycodestyle==2.12.1
+pyinstaller==6.12.0
+pyinstaller-hooks-contrib==2025.2
 pyparsing==3.1.2
 PyQt5==5.15.11
 PyQt5-Qt5==5.15.14
