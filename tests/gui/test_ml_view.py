@@ -1,6 +1,6 @@
 import pandas as pd
 import pytest
-from PyQt5.QtWidgets import QMessageBox
+from PyQt5.QtWidgets import QMessageBox, QApplication
 
 from gui.ml_view import (
 	AVAILABLE_ML_METHODS,  # Import the constant from the module
@@ -34,6 +34,12 @@ def ml_view(qtbot):
 	widget = MLView()
 	qtbot.addWidget(widget)
 	return widget
+
+
+@pytest.fixture
+def app():
+	"""Create a Qt application for testing."""
+	return QApplication([])
 
 
 class TestMethodSelectionWidget:
@@ -213,3 +219,32 @@ class TestMLView:
 
 		ml_view._show_warning("Test warning")
 		assert warning_shown
+
+
+def test_ml_view_initialization(app):
+	"""Test ML view initializes correctly."""
+	view = MLView()
+	assert view is not None
+	assert hasattr(view, "controller")
+	assert hasattr(view, "method_selection")
+	assert hasattr(view, "feature_selection")
+	assert hasattr(view, "run_button")
+	assert hasattr(view, "plot_button")
+
+
+def test_method_selection_widget_initialization(app):
+	"""Test method selection widget initializes correctly."""
+	widget = MethodSelectionWidget()
+	assert widget is not None
+	assert hasattr(widget, "available_list")
+	assert hasattr(widget, "selected_list")
+	assert widget.available_list.count() > 0  # Should have some available methods
+
+
+def test_feature_selection_widget_initialization(app):
+	"""Test feature selection widget initializes correctly."""
+	widget = FeatureSelectionWidget()
+	assert widget is not None
+	assert hasattr(widget, "target_combo")
+	assert hasattr(widget, "available_list")
+	assert hasattr(widget, "selected_list")

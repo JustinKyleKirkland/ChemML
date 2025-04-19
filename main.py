@@ -1,23 +1,52 @@
+#!/usr/bin/env python3
+"""
+ChemML - Chemistry Machine Learning Interface
+=============================================
+
+Main entry point for the ChemML application, which provides:
+- Data exploration and visualization
+- Chemical feature extraction and analysis
+- Machine learning model training and evaluation
+"""
+
+import logging
 import sys
 
 from PyQt5.QtWidgets import QApplication
+from PyQt5.QtCore import QCoreApplication, Qt
 
-from gui.gui import CSVInteractiveApp  # Import your main GUI class
-from utils.logging_config import setup_logging  # Import your logging setup function
+from chemml.ui.views import ChemMLApp
+from chemml.utils.logging_config import setup_logging
 
 
 def main():
-	# Set up logging
+	"""Main entry point for the ChemML application."""
+	# Configure logging
 	setup_logging()
+	logger = logging.getLogger("ChemML")
+	logger.info("Starting ChemML application")
 
-	# Create the application instance
+	# Set application metadata
+	QCoreApplication.setApplicationName("ChemML")
+	QCoreApplication.setApplicationVersion("1.0.0")
+	QCoreApplication.setOrganizationName("ChemML Team")
+
+	# Enable high DPI scaling for better appearance on high-resolution displays
+	QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+	QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+
+	# Create Qt application
 	app = QApplication(sys.argv)
 
-	# Create and show the main GUI window
-	window = CSVInteractiveApp()
-	window.show()
+	# Set fusion style for a modern look across platforms
+	app.setStyle("Fusion")
 
-	# Run the application event loop
+	# Create and show main application window
+	main_window = ChemMLApp()
+	main_window.show()
+
+	# Run application event loop
+	logger.info("Application initialized successfully")
 	sys.exit(app.exec_())
 
 

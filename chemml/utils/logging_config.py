@@ -14,7 +14,7 @@ def setup_logging():
 	log_file_path = os.path.join("logs", "app.log")
 
 	# Create a custom logger
-	logger = logging.getLogger("CSVInteractiveApp")
+	logger = logging.getLogger("ChemML")
 	# logger.setLevel(log_level)
 
 	# Check if handlers already exist to avoid duplicates
