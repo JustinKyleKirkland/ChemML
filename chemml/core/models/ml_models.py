@@ -53,24 +53,24 @@ def run_ml_methods(
 	Train and evaluate multiple machine learning models with optimized performance.
 
 	Args:
-		df: Input DataFrame containing features and target
-		target_column: Name of the target variable column
-		feature_columns: List of feature column names
-		selected_models: List of model names to train
-		custom_params: Optional dictionary of custom parameters for each model
-		test_size: Proportion of data to use for testing
-		random_state: Random seed for reproducibility
-		cv_folds: Number of cross-validation folds
-		n_jobs: Number of jobs to run in parallel
-		pre_dispatch: Number of predispatched jobs for parallel execution
-		error_score: Value to assign to the score if an error occurs in fitting
-		refit: Whether to refit the best model on the entire dataset
+	    df: Input DataFrame containing features and target
+	    target_column: Name of the target variable column
+	    feature_columns: List of feature column names
+	    selected_models: List of model names to train
+	    custom_params: Optional dictionary of custom parameters for each model
+	    test_size: Proportion of data to use for testing
+	    random_state: Random seed for reproducibility
+	    cv_folds: Number of cross-validation folds
+	    n_jobs: Number of jobs to run in parallel
+	    pre_dispatch: Number of predispatched jobs for parallel execution
+	    error_score: Value to assign to the score if an error occurs in fitting
+	    refit: Whether to refit the best model on the entire dataset
 
 	Returns:
-		Dictionary mapping model names to their results
+	    Dictionary mapping model names to their results
 
 	Raises:
-		ValueError: If invalid parameters are provided for a model
+	    ValueError: If invalid parameters are provided for a model
 	"""
 	custom_params = custom_params or {}
 	X = df[feature_columns].values  # Convert to numpy array for better performance
@@ -142,10 +142,10 @@ def download_results_as_json(
 	Save model results to a JSON file with optimized serialization.
 
 	Args:
-		results: Dictionary of model results
-		filename: Name of the output file
-		output_dir: Optional directory path for the output file
-		ensure_numpy: Convert numpy arrays to lists for JSON serialization
+	    results: Dictionary of model results
+	    filename: Name of the output file
+	    output_dir: Optional directory path for the output file
+	    ensure_numpy: Convert numpy arrays to lists for JSON serialization
 	"""
 	output_path = Path(output_dir or ".") / filename
 

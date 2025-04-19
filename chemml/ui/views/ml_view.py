@@ -1,11 +1,10 @@
 import ast
 import logging
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Any
 
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
+import numpy as np
 import seaborn as sns
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import (
@@ -29,126 +28,87 @@ from PyQt5.QtWidgets import (
 	QWidget,
 )
 
-from ml_backend.ml_backend import download_results_as_json, run_ml_methods
-from ml_backend.model_configs import MODEL_CONFIGS
+from chemml.ui.controllers.ml_controller import MLController, MLResult, AVAILABLE_ML_METHODS, MODEL_CONFIGS
+
 
 # Modern styling constants
 MAIN_STYLE = """
-	QWidget {
-		font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-		font-size: 13px;
-	}
-	QGroupBox {
-		border: 1px solid #cccccc;
-		border-radius: 4px;
-		margin-top: 1em;
-		padding-top: 10px;
-	}
-	QGroupBox::title {
-		subcontrol-origin: margin;
-		left: 10px;
-		padding: 0 3px;
-	}
+    QWidget {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        font-size: 13px;
+    }
+    QGroupBox {
+        border: 1px solid #cccccc;
+        border-radius: 4px;
+        margin-top: 1em;
+        padding-top: 10px;
+    }
+    QGroupBox::title {
+        subcontrol-origin: margin;
+        left: 10px;
+        padding: 0 3px;
+    }
 """
 
 BUTTON_STYLE = """
-	QPushButton {
-		background-color: #007bff;
-		color: white;
-		border: none;
-		border-radius: 4px;
-		padding: 8px 16px;
-		font-weight: bold;
-	}
-	QPushButton:hover {
-		background-color: #0056b3;
-	}
-	QPushButton:pressed {
-		background-color: #004085;
-	}
-	QPushButton:disabled {
-		background-color: #cccccc;
-	}
+    QPushButton {
+        background-color: #007bff;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        padding: 8px 16px;
+        font-weight: bold;
+    }
+    QPushButton:hover {
+        background-color: #0056b3;
+    }
+    QPushButton:pressed {
+        background-color: #004085;
+    }
+    QPushButton:disabled {
+        background-color: #cccccc;
+    }
 """
 
 LIST_STYLE = """
-	QListWidget {
-		border: 1px solid #cccccc;
-		border-radius: 4px;
-		padding: 4px;
-	}
-	QListWidget::item {
-		padding: 4px;
-		border-radius: 2px;
-	}
-	QListWidget::item:selected {
-		background-color: #007bff;
-		color: white;
-	}
-	QListWidget::item:hover {
-		background-color: #e9ecef;
-	}
+    QListWidget {
+        border: 1px solid #cccccc;
+        border-radius: 4px;
+        padding: 4px;
+    }
+    QListWidget::item {
+        padding: 4px;
+        border-radius: 2px;
+    }
+    QListWidget::item:selected {
+        background-color: #007bff;
+        color: white;
+    }
+    QListWidget::item:hover {
+        background-color: #e9ecef;
+    }
 """
 
 COMBO_STYLE = """
-	QComboBox {
-		border: 1px solid #cccccc;
-		border-radius: 4px;
-		padding: 4px 8px;
-		min-width: 6em;
-	}
-	QComboBox::drop-down {
-		border: none;
-		width: 20px;
-	}
-	QComboBox::down-arrow {
-		image: url(down_arrow.png);
-	}
+    QComboBox {
+        border: 1px solid #cccccc;
+        border-radius: 4px;
+        padding: 4px 8px;
+        min-width: 6em;
+    }
+    QComboBox::drop-down {
+        border: none;
+        width: 20px;
+    }
 """
 
 STATUS_STYLE = """
-	QStatusBar {
-		background-color: #f8f9fa;
-		border-top: 1px solid #dee2e6;
-		padding: 4px;
-	}
+    QStatusBar {
+        background-color: #f8f9fa;
+        border-top: 1px solid #dee2e6;
+        padding: 4px;
+    }
 """
-
-AVAILABLE_ML_METHODS: List[str] = [
-	"Linear Regression",
-	"Ridge Regression",
-	"Lasso Regression",
-	"Elastic Net Regression",
-	"Decision Tree Regression",
-	"Random Forest Regression",
-	"Support Vector Regression",
-	"Neural Network Regression",
-	"Gradient Boosting Regression",
-	"AdaBoost Regression",
-	"K-Nearest Neighbors Regression",
-	"Gaussian Process Regression",
-]
-
-
-@dataclass(frozen=True)
-class MLResult:
-	"""Stores the results of ML model execution."""
-
-	method_name: str
-	cv_mean_score: float
-	cv_std_score: float
-	train_mse: float
-	test_mse: float
-	train_r2: float
-	test_r2: float
-	best_hyperparameters: Dict[str, Any]
-	y_test: List[float]
-	test_predictions: List[float]
-
-	def __post_init__(self) -> None:
-		"""Validate the data after initialization."""
-		if len(self.y_test) != len(self.test_predictions):
-			raise ValueError("Length of y_test and test_predictions must match")
 
 
 class CustomParamsDialog(QDialog):
@@ -189,13 +149,13 @@ class CustomParamsDialog(QDialog):
 
 		self.param_input = QTextEdit()
 		self.param_input.setStyleSheet("""
-			QTextEdit {
-				border: 1px solid #cccccc;
-				border-radius: 4px;
-				padding: 8px;
-				background-color: #ffffff;
-			}
-		""")
+            QTextEdit {
+                border: 1px solid #cccccc;
+                border-radius: 4px;
+                padding: 8px;
+                background-color: #ffffff;
+            }
+        """)
 		self.param_input.setText(str(self.current_params))
 		self.param_input.setMinimumHeight(100)
 
@@ -231,16 +191,14 @@ class CustomParamsDialog(QDialog):
 			return self.current_params
 
 
-@dataclass
 class MethodSelectionWidget(QWidget):
 	"""Widget for selecting ML methods with an improved modern interface."""
 
-	available_methods: Set[str] = field(default_factory=lambda: set(AVAILABLE_ML_METHODS))
-	selected_methods: Set[str] = field(default_factory=set)
-	custom_params: Dict[str, Dict[str, Any]] = field(default_factory=dict)
-
-	def __post_init__(self) -> None:
-		super().__init__()
+	def __init__(self, parent=None) -> None:
+		super().__init__(parent)
+		self.available_methods: Set[str] = set(AVAILABLE_ML_METHODS)
+		self.selected_methods: Set[str] = set()
+		self.custom_params: Dict[str, Dict[str, Any]] = {}
 		self.setup_ui()
 
 	def setup_ui(self) -> None:
@@ -346,7 +304,7 @@ class MethodSelectionWidget(QWidget):
 			return
 
 		method_name = selected_items[0].text()
-		current_params = self.custom_params.get(method_name, MODEL_CONFIGS[method_name].param_grid)
+		current_params = self.custom_params.get(method_name, MODEL_CONFIGS[method_name]["param_grid"])
 
 		dialog = CustomParamsDialog(method_name, current_params, self)
 		if dialog.exec_() == QDialog.Accepted:
@@ -361,15 +319,13 @@ class MethodSelectionWidget(QWidget):
 		return self.custom_params.copy()
 
 
-@dataclass
 class FeatureSelectionWidget(QWidget):
 	"""Widget for selecting target and feature columns with an improved modern interface."""
 
-	previous_target: Optional[str] = None
-	_columns_cache: Dict[str, List[str]] = field(default_factory=dict)
-
-	def __post_init__(self) -> None:
-		super().__init__()
+	def __init__(self, parent=None) -> None:
+		super().__init__(parent)
+		self.previous_target: Optional[str] = None
+		self._columns_cache: Dict[str, List[str]] = {}
 		self.setup_ui()
 
 	def setup_ui(self) -> None:
@@ -516,9 +472,9 @@ class MLView(QWidget):
 	def __init__(self) -> None:
 		super().__init__()
 		self.logger = logging.getLogger("MLView")
-		self.df = pd.DataFrame()
-		self._results_cache: Dict[str, MLResult] = {}
-		self._model_settings: Dict[str, Dict[str, Any]] = {}
+
+		# Initialize the controller
+		self.controller = MLController()
 
 		self.setup_ui()
 		self._connect_signals()
@@ -553,17 +509,17 @@ class MLView(QWidget):
 		self.progress_bar = QProgressBar()
 		self.progress_bar.setVisible(False)
 		self.progress_bar.setStyleSheet("""
-			QProgressBar {
-				border: 1px solid #cccccc;
-				border-radius: 4px;
-				text-align: center;
-				height: 20px;
-			}
-			QProgressBar::chunk {
-				background-color: #007bff;
-				border-radius: 3px;
-			}
-		""")
+            QProgressBar {
+                border: 1px solid #cccccc;
+                border-radius: 4px;
+                text-align: center;
+                height: 20px;
+            }
+            QProgressBar::chunk {
+                background-color: #007bff;
+                border-radius: 3px;
+            }
+        """)
 		content_layout.addWidget(self.progress_bar)
 
 		# Create action buttons container
@@ -605,7 +561,7 @@ class MLView(QWidget):
 		# Set initial status
 		self.update_status("Ready to start. Please select features and methods.")
 
-	def _create_action_button(self, text: str, callback: Callable, tooltip: str = "") -> QPushButton:
+	def _create_action_button(self, text: str, callback: callable, tooltip: str = "") -> QPushButton:
 		"""Creates a styled action button with tooltip."""
 		button = QPushButton(text)
 		button.setStyleSheet(BUTTON_STYLE)
@@ -623,9 +579,10 @@ class MLView(QWidget):
 
 	def set_dataframe(self, df: pd.DataFrame) -> None:
 		"""Updates the view with new data."""
-		self.df = df.copy()  # Create a copy to prevent modifications
-		self.data_ready_signal.emit(self.df)
-		self.update_status(f"Loaded dataset with {len(df)} rows and {len(df.columns)} columns")
+		if df is not None and not df.empty:
+			self.controller.set_dataframe(df)
+			self.data_ready_signal.emit(df)
+			self.update_status(f"Loaded dataset with {len(df)} rows and {len(df.columns)} columns")
 
 	def update_column_selection(self, df: pd.DataFrame) -> None:
 		"""Updates column selections when data changes."""
@@ -637,11 +594,11 @@ class MLView(QWidget):
 
 	def _handle_target_change(self) -> None:
 		"""Handles changes to target column selection."""
-		if self.df.empty:
+		if self.controller.df.empty:
 			return
 
 		current_target = self.feature_selection.get_target_column()
-		columns = sorted(self.df.columns.tolist())
+		columns = sorted(self.controller.df.columns.tolist())
 
 		self.feature_selection.available_list.clear()
 
@@ -658,20 +615,13 @@ class MLView(QWidget):
 		features = self.feature_selection.get_feature_columns()
 		methods = self.method_selection.get_selected_methods()
 
-		if target == "Select Target Column":
-			self._show_warning("Please select a target column.")
-			return False
-		if not features:
-			self._show_warning("Please select feature columns.")
-			return False
-		if not methods:
-			self._show_warning("Please select machine learning methods.")
-			return False
-		if self.df.empty:
-			self._show_warning("Please load a CSV file.")
-			return False
+		# Use the controller for validation
+		is_valid, error_message = self.controller.validate_selections(target, features, methods)
 
-		return True
+		if not is_valid:
+			self._show_warning(error_message)
+
+		return is_valid
 
 	def _show_warning(self, message: str, title: str = "Warning") -> None:
 		"""Shows a warning message box and updates status."""
@@ -679,93 +629,53 @@ class MLView(QWidget):
 		self.update_status(f"Warning: {message}")
 		QMessageBox.warning(self, title, message)
 
-	def _get_cached_result(self, method: str, target: str, features: List[str]) -> Optional[MLResult]:
-		"""Returns cached result for a method and feature set."""
-		cache_key = f"{method}_{target}_{','.join(sorted(features))}"
-		return self._results_cache.get(cache_key)
-
-	def update_model_settings(self, settings: Dict[str, Dict[str, Any]]) -> None:
-		"""Update model settings from the advanced view.
-
-		Args:
-			settings: Dictionary of model settings
-		"""
-		self._model_settings = settings.copy()
-		self.logger.debug(f"Updated model settings: {settings}")
-
 	def _run_ml_methods(self) -> None:
 		"""Run selected ML methods with current settings."""
-		if not self.df.empty:
-			selected_methods = self.method_selection.get_selected_methods()
-			if not selected_methods:
-				self._show_warning("No Methods Selected", "Please select at least one ML method to run.")
-				return
+		if not self._validate_selections():
+			return
 
-			target_column = self.feature_selection.get_target_column()
-			if target_column == "Select Target Column":
-				self._show_warning("No Target Selected", "Please select a target column.")
-				return
+		# Get selections
+		target_column = self.feature_selection.get_target_column()
+		selected_features = self.feature_selection.get_feature_columns()
+		selected_methods = self.method_selection.get_selected_methods()
 
-			selected_features = self.feature_selection.get_feature_columns()
-			if not selected_features:
-				self._show_warning("No Features Selected", "Please select at least one feature.")
-				return
+		# Update custom parameters in controller
+		for method, params in self.method_selection.get_custom_params().items():
+			self.controller.set_custom_parameters(method, params)
 
-			# Update status and show progress bar
-			self.update_status("Running ML methods...")
-			self.run_button.setEnabled(False)
-			self.progress_bar.setVisible(True)
-			self.progress_bar.setRange(0, len(selected_methods))
-			self.progress_bar.setValue(0)
+		# Update status and show progress bar
+		self.update_status("Running ML methods...")
+		self.run_button.setEnabled(False)
+		self.progress_bar.setVisible(True)
+		self.progress_bar.setRange(0, len(selected_methods))
+		self.progress_bar.setValue(0)
 
-			try:
-				# Run methods with custom parameters if available
-				results = {}
-				for i, method in enumerate(selected_methods, 1):
-					custom_params = self._model_settings.get(method, {})
-					if custom_params:
-						self.logger.info(f"Using custom parameters for {method}: {custom_params}")
-						method_results = run_ml_methods(
-							df=self.df,
-							target_column=target_column,
-							feature_columns=selected_features,
-							selected_models=[method],
-							custom_params=custom_params,
-						)
-						results[method] = method_results[method]
-					else:
-						method_results = run_ml_methods(
-							df=self.df,
-							target_column=target_column,
-							feature_columns=selected_features,
-							selected_models=[method],
-							custom_params={},
-						)
-						results[method] = method_results[method]
+		try:
+			# Run methods with controller
+			results = self.controller.run_ml_methods(
+				target_column=target_column, feature_columns=selected_features, selected_methods=selected_methods
+			)
 
-					# Update progress bar
-					self.progress_bar.setValue(i)
-					self.update_status(f"Running ML methods... ({i}/{len(selected_methods)})")
+			# Update progress bar
+			self.progress_bar.setValue(len(selected_methods))
 
-				# Cache results and update UI
-				self._results_cache = results
-				self.plot_button.setEnabled(True)
-				self._show_results_dialog(results)
-				self.update_status("ML methods completed successfully.")
+			# Enable plot button and show results
+			self.plot_button.setEnabled(True)
+			self._show_results_dialog(results)
+			self.update_status("ML methods completed successfully.")
 
-			except Exception as e:
-				self.logger.error(f"Error running ML methods: {str(e)}")
-				self._show_warning("Error", f"Failed to run ML methods: {str(e)}")
-				self.update_status("Error running ML methods.")
-			finally:
-				self.run_button.setEnabled(True)
-				self.progress_bar.setVisible(False)
-		else:
-			self._show_warning("No Data", "Please load data before running ML methods.")
+		except Exception as e:
+			self.logger.error(f"Error running ML methods: {str(e)}")
+			self._show_warning(f"Failed to run ML methods: {str(e)}", "Error")
+
+		finally:
+			self.run_button.setEnabled(True)
+			self.progress_bar.setVisible(False)
 
 	def _show_results_dialog(self, results: Dict[str, MLResult]) -> None:
 		"""Shows dialog with ML results and save option."""
-		best_method = max(results.keys(), key=lambda m: results[m].cv_mean_score)
+		# Find best model based on R²
+		best_method = max(results.keys(), key=lambda m: results[m].test_r2)
 		best_result = results[best_method]
 
 		result_str = self._format_result_string(best_method, best_result)
@@ -803,9 +713,11 @@ class MLView(QWidget):
 		"""Saves results to a JSON file."""
 		filename, _ = QFileDialog.getSaveFileName(self, "Save Results", "", "JSON Files (*.json)")
 		if filename:
-			download_results_as_json(results, filename)
-			self.update_status(f"Results saved to {filename}")
-			self.logger.info(f"Results saved to {filename}")
+			try:
+				self.controller.save_results_to_json(results, filename)
+				self.update_status(f"Results saved to {filename}")
+			except Exception as e:
+				self._show_warning(f"Error saving results: {str(e)}", "Save Error")
 
 	def _plot_results(self) -> None:
 		"""Opens dialog to select models for plotting."""
@@ -863,27 +775,25 @@ class MLView(QWidget):
 
 			for method in methods:
 				self.update_status(f"Creating plot for {method}...")
-				cached_result = self._get_cached_result(method, target, features)
-				if cached_result:
-					self._create_scatter_plot(cached_result, method)
-					continue
 
-				results = run_ml_methods(
-					self.df,
-					target,
-					features,
-					[method],
-				)
+				# Check if result is in cache
+				result = self.controller.get_cached_result(method, target, features)
 
-				if method in results:
-					self._create_scatter_plot(results[method], method)
-					cache_key = f"{method}_{target}_{','.join(sorted(features))}"
-					self._results_cache[cache_key] = results[method]
+				if result:
+					self._create_scatter_plot(result, method)
+				else:
+					# Run the model if not in cache
+					results = self.controller.run_ml_methods(
+						target_column=target, feature_columns=features, selected_methods=[method]
+					)
+
+					if method in results:
+						self._create_scatter_plot(results[method], method)
 
 			self.update_status("Plots created successfully.")
 
 		except Exception as e:
-			self._show_warning(f"Error plotting results: {str(e)}")
+			self._show_warning(f"Error plotting results: {str(e)}", "Plot Error")
 
 	def _create_scatter_plot(self, result: MLResult, method: str) -> None:
 		"""Creates an improved scatter plot comparing actual vs predicted values."""
