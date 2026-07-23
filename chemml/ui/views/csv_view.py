@@ -28,6 +28,7 @@ from chemml.core.chem import detect_smiles_column
 from chemml.ui.assets.colors import NON_NUM_COLOR, NAN_COLOR, ERROR_COLOR
 from chemml.ui.assets.icons import create_data_icon
 from chemml.ui.controllers.csv_controller import CSVController
+from chemml.ui.widgets.descriptor_dialog import DescriptorSelectionDialog
 from chemml.ui.widgets.molecule_widgets import MoleculeTooltip
 
 
@@ -290,9 +291,14 @@ class CSVView(QWidget):
 		    df: DataFrame to display
 		"""
 		try:
+			# Disable sorting while populating; otherwise Qt reorders rows mid-insert
+			# and cells land in the wrong place. Re-enabled after the table is filled.
+			sorting_was_enabled = self.table_widget.isSortingEnabled()
+			self.table_widget.setSortingEnabled(False)
+
 			self.table_widget.setRowCount(len(df))
 			self.table_widget.setColumnCount(len(df.columns))
-			self.table_widget.setHorizontalHeaderLabels(df.columns)
+			self.table_widget.setHorizontalHeaderLabels([str(col) for col in df.columns])
 
 			# Pre-calculate SMILES columns for efficiency
 			smiles_columns = {col: detect_smiles_column(df, col) for col in df.columns}
@@ -324,6 +330,7 @@ class CSVView(QWidget):
 
 			# Optimize column widths
 			self.table_widget.resizeColumnsToContents()
+			self.table_widget.setSortingEnabled(sorting_was_enabled)
 			self.logger.info("Table updated successfully.")
 
 		except Exception as e:
@@ -450,6 +457,7 @@ class CSVView(QWidget):
 			descriptors_menu.addAction(
 				"Add Basic Properties (MW, LogP, TPSA)", lambda: self.add_descriptors(column_name, "basic")
 			)
+			descriptors_menu.addAction("Choose Descriptors…", lambda: self.add_custom_descriptors(column_name))
 			rdkit_menu.addMenu(descriptors_menu)
 
 			# Add fingerprints submenu
@@ -549,6 +557,31 @@ class CSVView(QWidget):
 		except Exception as e:
 			self.show_error_message("Descriptor Calculation Error", str(e))
 			self.logger.error(f"Error adding descriptors: {e}")
+
+	def add_custom_descriptors(self, column_name: str) -> None:
+		"""
+		Open a dialog to choose specific RDKit descriptors and add them.
+
+		Args:
+		    column_name: Column containing SMILES strings
+		"""
+		dialog = DescriptorSelectionDialog(self)
+		if dialog.exec_() != DescriptorSelectionDialog.Accepted:
+			return
+
+		selected = dialog.get_selected_descriptors()
+		if not selected:
+			return
+
+		try:
+			df = self.controller.add_molecular_descriptors(column_name, "custom", custom_descriptors=selected)
+			self.update_table(df)
+			self.update_column_dropdown()
+			self.data_ready.emit(df)
+			self.logger.info(f"Added {len(selected)} custom descriptors to column: {column_name}")
+		except Exception as e:
+			self.show_error_message("Descriptor Calculation Error", str(e))
+			self.logger.error(f"Error adding custom descriptors: {e}")
 
 	def add_fingerprints(self, column_name: str, fp_type: str) -> None:
 		"""

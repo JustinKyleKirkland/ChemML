@@ -476,8 +476,21 @@ class MLView(QWidget):
 		# Initialize the controller
 		self.controller = MLController()
 
+		# Run parameters, configurable via the Settings tab.
+		self.run_config: Dict[str, Any] = {
+			"test_size": 0.2,
+			"cv_folds": 5,
+			"random_state": 42,
+			"scale_features": True,
+		}
+
 		self.setup_ui()
 		self._connect_signals()
+
+	def set_run_config(self, config: Dict[str, Any]) -> None:
+		"""Update the ML run parameters (called from the Settings tab)."""
+		self.run_config.update(config)
+		self.logger.debug(f"ML run config updated: {self.run_config}")
 
 	def setup_ui(self) -> None:
 		"""Sets up the main UI layout with modern styling."""
@@ -651,9 +664,15 @@ class MLView(QWidget):
 		self.progress_bar.setValue(0)
 
 		try:
-			# Run methods with controller
+			# Run methods with controller, honouring the Settings-tab configuration.
 			results = self.controller.run_ml_methods(
-				target_column=target_column, feature_columns=selected_features, selected_methods=selected_methods
+				target_column=target_column,
+				feature_columns=selected_features,
+				selected_methods=selected_methods,
+				test_size=self.run_config["test_size"],
+				random_state=self.run_config["random_state"],
+				cv_folds=self.run_config["cv_folds"],
+				scale_features=self.run_config["scale_features"],
 			)
 
 			# Update progress bar
@@ -777,14 +796,20 @@ class MLView(QWidget):
 				self.update_status(f"Creating plot for {method}...")
 
 				# Check if result is in cache
-				result = self.controller.get_cached_result(method, target, features)
+				result = self.controller.get_cached_result(method, target, features, self.run_config)
 
 				if result:
 					self._create_scatter_plot(result, method)
 				else:
 					# Run the model if not in cache
 					results = self.controller.run_ml_methods(
-						target_column=target, feature_columns=features, selected_methods=[method]
+						target_column=target,
+						feature_columns=features,
+						selected_methods=[method],
+						test_size=self.run_config["test_size"],
+						random_state=self.run_config["random_state"],
+						cv_folds=self.run_config["cv_folds"],
+						scale_features=self.run_config["scale_features"],
 					)
 
 					if method in results:

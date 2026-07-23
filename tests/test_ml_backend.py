@@ -2,8 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from ml_backend.ml_backend import run_ml_methods
-from ml_backend.model_configs import MODEL_CONFIGS
+from chemml.core.models import MODEL_CONFIGS, run_ml_methods
 
 
 @pytest.fixture

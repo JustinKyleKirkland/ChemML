@@ -1,8 +1,12 @@
 import pytest
-from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QApplication
 
-from utils.plotting_utils import AxesOptionsDialog, BaseOptionsDialog, LineFitOptionsDialog, MarkerOptionsDialog
+from chemml.ui.widgets.plot_dialogs import (
+	AxesOptionsDialog,
+	BaseOptionsDialog,
+	LineFitOptionsDialog,
+	MarkerOptionsDialog,
+)
 
 
 @pytest.fixture(scope="session")
@@ -54,7 +58,7 @@ class TestBaseOptionsDialog:
 				pass
 
 			button = dialog._add_color_button("Color Button", dummy_slot)
-			assert button.text() == "Color Button"
+			assert button.text() == "Choose Color"
 		finally:
 			dialog.deleteLater()
 
@@ -63,7 +67,7 @@ class TestAxesOptionsDialog:
 	def test_initialization(self, qapp):
 		dialog = AxesOptionsDialog()
 		try:
-			assert dialog.windowTitle() == "Axes Options"
+			assert dialog.windowTitle() == "Axes Configuration"
 			assert dialog.x_title == "X Axis"
 			assert dialog.y_title == "Y Axis"
 			assert dialog.title_size == 12
@@ -114,9 +118,9 @@ class TestMarkerOptionsDialog:
 	def test_initialization(self, qapp):
 		dialog = MarkerOptionsDialog()
 		try:
-			assert dialog.windowTitle() == "Marker Options"
-			assert dialog.marker_color == Qt.red
-			assert dialog.marker_size_slider.value() == 5
+			assert dialog.windowTitle() == "Marker Configuration"
+			assert dialog.marker_color.name() == "#007bff"
+			assert dialog.marker_size_slider.value() == 8
 		finally:
 			dialog.deleteLater()
 
@@ -142,10 +146,10 @@ class TestLineFitOptionsDialog:
 	def test_initialization(self, qapp):
 		dialog = LineFitOptionsDialog()
 		try:
-			assert dialog.windowTitle() == "Line of Best Fit Options"
-			assert dialog.line_fit_color == Qt.black
-			assert not dialog.line_fit_checkbox.isChecked()
-			assert not dialog.r_squared_checkbox.isChecked()
+			assert dialog.windowTitle() == "Trend Line Configuration"
+			assert dialog.line_fit_color.name() == "#6c757d"
+			assert dialog.line_fit_checkbox.isChecked()
+			assert dialog.r_squared_checkbox.isChecked()
 		finally:
 			dialog.deleteLater()
 

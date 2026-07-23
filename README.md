@@ -14,9 +14,10 @@ ChemML is a powerful Python-based application that provides a modern, user-frien
   - Undo/redo functionality for data operations
 
 - **Chemistry-Specific Functionality**
-  - Automatic SMILES structure detection and rendering
+  - Automatic SMILES structure detection and rendering (hover to preview a molecule)
   - Convert to canonical SMILES representation
-  - Calculate molecular descriptors (MW, LogP, TPSA)
+  - Calculate basic molecular descriptors (MW, LogP, TPSA, H-donors/acceptors)
+  - Pick from ~200 RDKit descriptors via a searchable dialog
   - Generate molecular fingerprints (Morgan/ECFP4, MACCS)
 
 - **Advanced Data Visualization**
@@ -26,10 +27,12 @@ ChemML is a powerful Python-based application that provides a modern, user-frien
   - Interactive zooming and plot manipulation
 
 - **Machine Learning Capabilities**
-  - Multiple model selection options (Random Forest, SVM, Neural Networks, etc.)
-  - Feature selection and preprocessing
-  - Model training with configurable hyperparameters
-  - Performance metrics visualization and model evaluation
+  - 12 regression models (Linear/Ridge/Lasso/Elastic Net, Decision Tree, Random
+    Forest, Gradient Boosting, AdaBoost, SVR, Neural Network, KNN, Gaussian Process)
+  - Feature selection and optional standardization
+  - Grid-search hyperparameter tuning with cross-validation
+  - Configurable test split, CV folds and random seed via the **Settings** tab
+  - Actual-vs-predicted plots and metrics (R², MSE) with JSON export
 
 ## Project Structure
 
@@ -57,7 +60,7 @@ ChemML/
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/YourUsername/ChemML.git
+   git clone https://github.com/JustinKKirkland/ChemML.git
    ```
 
 2. Navigate to the project directory:
@@ -82,6 +85,12 @@ ChemML/
    pip install -r requirements.txt
    ```
 
+   Or install ChemML as an editable package (reads dependencies from
+   `pyproject.toml` and adds a `chemml` console command):
+   ```bash
+   pip install -e .
+   ```
+
 ## Usage
 
 1. Activate your virtual environment if not already activated.
@@ -89,6 +98,8 @@ ChemML/
 2. Run the application:
    ```bash
    python main.py
+   # or, if installed with `pip install -e .`
+   chemml
    ```
 
 3. Use the intuitive tabbed interface to:
@@ -112,18 +123,38 @@ ChemML/
 - Choose and configure appropriate ML models
 - Train models and evaluate performance
 
+### Settings Tab
+- Configure the test-set size, cross-validation folds and random seed
+- Toggle feature standardization
+- Changes apply to the next training run
+
+## Development
+
+Install the development dependencies and run the test suite:
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+pytest              # run all tests
+ruff check .        # lint
+ruff format .       # format (tabs, 120 cols)
+```
+
+The project follows an MVC layout: pure logic lives in `chemml/core` and the
+`*Controller` classes, while `chemml/ui/views` and `chemml/ui/widgets` contain
+only the Qt presentation layer. Tests mirror this split under `tests/`.
+
 ## Dependencies
 
 Key dependencies include:
 
-- PyQt5 for the modern GUI interface
-- pandas for data manipulation
+- PyQt5 for the GUI interface
+- pandas / NumPy for data manipulation
 - scikit-learn for machine learning algorithms
-- matplotlib for data visualization
+- matplotlib / seaborn for data visualization
 - RDKit for chemical data processing and visualization
-- NumPy for numerical computations
 
-For a complete list of dependencies, see `requirements.txt`.
+Runtime dependencies are listed in `requirements.txt` (and `pyproject.toml`);
+development tools are in `requirements-dev.txt`.
 
 ## Contributing
 
@@ -141,6 +172,12 @@ Guidelines for contributing to the project:
 This project is licensed under the GNU Public License - see the [LICENSE](LICENSE) file for details.
 
 ## Version History
+
+- **1.1.0** - Maintenance and feature update
+  - Configurable ML settings tab (test split, CV folds, seed, scaling)
+  - Searchable custom RDKit descriptor selection
+  - Fixed descriptor/fingerprint alignment after filtering
+  - Repaired and expanded the test suite; single-source logging; cleaner packaging
 
 - **1.0.0** (April 2025) - Initial release with modernized UI
   - Enhanced CSV data handling

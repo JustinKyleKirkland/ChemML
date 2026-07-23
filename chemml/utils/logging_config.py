@@ -1,58 +1,49 @@
+"""Centralised logging configuration for ChemML.
+
+All application loggers are children of the ``ChemML`` logger. We attach the
+file and console handlers to that single logger and disable propagation so that
+each record is emitted exactly once (previously ``basicConfig`` on the root
+logger plus handlers on ``ChemML`` produced duplicate lines).
+"""
+
 import logging
 import os
 
+LOG_DIR = "logs"
+LOG_FILE = "app.log"
+_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
-def setup_logging():
-	logging.basicConfig(
-		level=logging.DEBUG,
-		format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-	)
-	# Create a logs directory if it doesn't exist
-	os.makedirs("logs", exist_ok=True)
 
-	# Define the log file path
-	log_file_path = os.path.join("logs", "app.log")
+def setup_logging(level: int = logging.INFO) -> logging.Logger:
+	"""Configure and return the root ``ChemML`` logger.
 
-	# Create a custom logger
+	Safe to call multiple times; handlers are only added once.
+
+	Args:
+		level: Logging level for the ChemML logger (default ``logging.INFO``).
+
+	Returns:
+		The configured ``ChemML`` logger.
+	"""
+	os.makedirs(LOG_DIR, exist_ok=True)
+	log_file_path = os.path.join(LOG_DIR, LOG_FILE)
+
 	logger = logging.getLogger("ChemML")
-	# logger.setLevel(log_level)
+	logger.setLevel(level)
+	# Don't hand records to the root logger; we manage our own handlers.
+	logger.propagate = False
 
-	# Check if handlers already exist to avoid duplicates
 	if not logger.handlers:
-		# Define a formatter
-		formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+		formatter = logging.Formatter(_FORMAT)
 
-		# Create a file handler
 		file_handler = logging.FileHandler(log_file_path)
-		# file_handler.setLevel(log_level)
 		file_handler.setFormatter(formatter)
 
-		# Create a console handler
 		console_handler = logging.StreamHandler()
-		# console_handler.setLevel(log_level)
 		console_handler.setFormatter(formatter)
 
-		# Add the handlers to the logger
 		logger.addHandler(file_handler)
 		logger.addHandler(console_handler)
 
-	# Log the application start
-	logger.info("Logging is set up and ready to go.")
-
-
-# Optional: Function to log an error message
-def log_error(message):
-	logger = logging.getLogger()
-	logger.error(message)
-
-
-# Optional: Function to log a warning message
-def log_warning(message):
-	logger = logging.getLogger()
-	logger.warning(message)
-
-
-# Optional: Function to log an info message
-def log_info(message):
-	logger = logging.getLogger()
-	logger.info(message)
+	logger.debug("Logging is set up and ready to go.")
+	return logger

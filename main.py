@@ -15,6 +15,7 @@ import sys
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import QCoreApplication, Qt
 
+from chemml import __version__
 from chemml.ui.views import ChemMLApp
 from chemml.utils.logging_config import setup_logging
 
@@ -28,7 +29,7 @@ def main():
 
 	# Set application metadata
 	QCoreApplication.setApplicationName("ChemML")
-	QCoreApplication.setApplicationVersion("1.0.0")
+	QCoreApplication.setApplicationVersion(__version__)
 	QCoreApplication.setOrganizationName("ChemML Team")
 
 	# Enable high DPI scaling for better appearance on high-resolution displays

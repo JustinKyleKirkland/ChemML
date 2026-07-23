@@ -65,7 +65,7 @@ def canonicalize_smiles(smiles: str) -> str:
 		mol = Chem.MolFromSmiles(smiles)
 		if mol:
 			return Chem.MolToSmiles(mol, canonical=True)
-	except:
+	except Exception:
 		pass
 	return smiles
 
@@ -109,7 +109,7 @@ def calculate_descriptor(mol: Chem.Mol, descriptor_name: str) -> Optional[float]
 	try:
 		desc_func = getattr(Descriptors, descriptor_name)
 		return desc_func(mol)
-	except:
+	except Exception:
 		return None
 
 

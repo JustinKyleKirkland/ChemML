@@ -237,6 +237,7 @@ class MLController:
 		test_size: float = 0.2,
 		random_state: int = 42,
 		cv_folds: int = 5,
+		scale_features: bool = True,
 	) -> Dict[str, MLResult]:
 		"""
 		Run selected ML methods on specified data.
@@ -248,6 +249,7 @@ class MLController:
 		    test_size: Proportion of data to use for testing
 		    random_state: Random seed for reproducibility
 		    cv_folds: Number of cross-validation folds
+		    scale_features: Whether to standardize features with StandardScaler
 
 		Returns:
 		    Dictionary of ML results by method name
@@ -274,10 +276,23 @@ class MLController:
 			# Split data
 			X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=random_state)
 
-			# Scale features
-			scaler = StandardScaler()
-			X_train_scaled = scaler.fit_transform(X_train)
-			X_test_scaled = scaler.transform(X_test)
+			# Optionally scale features (tree/ensemble models don't need it, but it
+			# helps distance- and gradient-based models like SVR, KNN and MLP).
+			if scale_features:
+				scaler = StandardScaler()
+				X_train_scaled = scaler.fit_transform(X_train)
+				X_test_scaled = scaler.transform(X_test)
+			else:
+				X_train_scaled = X_train.values
+				X_test_scaled = X_test.values
+
+			# Cross-validation needs at least as many training samples as folds.
+			effective_cv = max(2, min(cv_folds, len(X_train)))
+			if effective_cv < cv_folds:
+				self.logger.warning(
+					f"Reducing cv_folds from {cv_folds} to {effective_cv} "
+					f"(only {len(X_train)} training samples available)."
+				)
 
 			results = {}
 
@@ -295,7 +310,7 @@ class MLController:
 
 				# Create grid search
 				grid_search = GridSearchCV(
-					model_class(), param_grid, cv=cv_folds, scoring="neg_mean_squared_error", n_jobs=-1
+					model_class(), param_grid, cv=effective_cv, scoring="neg_mean_squared_error", n_jobs=-1
 				)
 
 				# Fit model
@@ -331,8 +346,15 @@ class MLController:
 				# Store result
 				results[method] = result
 
-				# Cache result
-				cache_key = f"{method}_{target_column}_{','.join(sorted(feature_columns))}"
+				# Cache result keyed by method, columns AND run settings so changing
+				# the configuration doesn't return a stale result.
+				run_config = {
+					"test_size": test_size,
+					"random_state": random_state,
+					"cv_folds": cv_folds,
+					"scale_features": scale_features,
+				}
+				cache_key = self._cache_key(method, target_column, feature_columns, run_config)
 				self.results_cache[cache_key] = result
 
 				self.logger.info(f"Completed {method} (Test R²: {test_r2:.4f})")
@@ -343,19 +365,35 @@ class MLController:
 			self.logger.error(f"Error running ML methods: {str(e)}")
 			raise
 
-	def get_cached_result(self, method: str, target_column: str, feature_columns: List[str]) -> Optional[MLResult]:
+	@staticmethod
+	def _cache_key(method: str, target_column: str, feature_columns: List[str], run_config: Dict[str, Any]) -> str:
+		"""Build a cache key that captures the method, columns and run settings."""
+		features = ",".join(sorted(feature_columns))
+		config = ",".join(f"{k}={run_config[k]}" for k in sorted(run_config))
+		return f"{method}_{target_column}_{features}_{config}"
+
+	def get_cached_result(
+		self,
+		method: str,
+		target_column: str,
+		feature_columns: List[str],
+		run_config: Optional[Dict[str, Any]] = None,
+	) -> Optional[MLResult]:
 		"""
-		Get cached result for a method and feature set.
+		Get cached result for a method, feature set and run configuration.
 
 		Args:
 		    method: Name of the ML method
 		    target_column: Target column name
 		    feature_columns: List of feature column names
+		    run_config: Run settings (test_size, random_state, cv_folds, scale_features)
 
 		Returns:
 		    MLResult or None if not cached
 		"""
-		cache_key = f"{method}_{target_column}_{','.join(sorted(feature_columns))}"
+		if run_config is None:
+			run_config = {"test_size": 0.2, "random_state": 42, "cv_folds": 5, "scale_features": True}
+		cache_key = self._cache_key(method, target_column, feature_columns, run_config)
 		return self.results_cache.get(cache_key)
 
 	def save_results_to_json(self, results: Dict[str, MLResult], filename: str) -> None:

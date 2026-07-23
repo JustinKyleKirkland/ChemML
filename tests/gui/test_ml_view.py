@@ -1,8 +1,8 @@
 import pandas as pd
 import pytest
-from PyQt5.QtWidgets import QMessageBox, QApplication
+from PyQt5.QtWidgets import QMessageBox
 
-from gui.ml_view import (
+from chemml.ui.views.ml_view import (
 	AVAILABLE_ML_METHODS,  # Import the constant from the module
 	FeatureSelectionWidget,
 	MethodSelectionWidget,
@@ -37,9 +37,9 @@ def ml_view(qtbot):
 
 
 @pytest.fixture
-def app():
-	"""Create a Qt application for testing."""
-	return QApplication([])
+def app(qapp):
+	"""Provide the shared Qt application (avoids creating a second QApplication)."""
+	return qapp
 
 
 class TestMethodSelectionWidget:
@@ -136,7 +136,7 @@ class TestFeatureSelectionWidget:
 class TestMLView:
 	def test_initialization(self, ml_view):
 		"""Test initial state of the view."""
-		assert ml_view.df.empty
+		assert ml_view.controller.df.empty
 		assert isinstance(ml_view.method_selection, MethodSelectionWidget)
 		assert isinstance(ml_view.feature_selection, FeatureSelectionWidget)
 
@@ -144,7 +144,7 @@ class TestMLView:
 		"""Test setting dataframe updates all components."""
 		ml_view.set_dataframe(sample_dataframe)
 
-		assert ml_view.df.equals(sample_dataframe)
+		assert ml_view.controller.df.equals(sample_dataframe)
 		assert ml_view.feature_selection.target_combo.count() == len(sample_dataframe.columns) + 1
 		assert ml_view.feature_selection.available_list.count() == len(sample_dataframe.columns)
 

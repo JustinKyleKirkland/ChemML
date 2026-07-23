@@ -2,7 +2,6 @@ import json
 import multiprocessing
 import sys
 from dataclasses import asdict, dataclass
-from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -126,12 +125,6 @@ def run_ml_methods(
 	return results
 
 
-@lru_cache(maxsize=32)
-def _serialize_results(results_dict: Dict[str, Any]) -> str:
-	"""Cache and serialize results to JSON string."""
-	return json.dumps(results_dict, indent=4)
-
-
 def download_results_as_json(
 	results: Dict[str, ModelResults],
 	filename: str = "ml_results.json",
@@ -161,8 +154,5 @@ def download_results_as_json(
 	# Create directory if it doesn't exist
 	output_path.parent.mkdir(parents=True, exist_ok=True)
 
-	# Use cached serialization for better performance
-	json_str = _serialize_results(serializable_results)
-
 	with open(output_path, "w") as f:
-		f.write(json_str)
+		json.dump(serializable_results, f, indent=4)

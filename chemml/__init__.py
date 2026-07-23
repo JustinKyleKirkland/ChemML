@@ -1,11 +1,7 @@
-from chemml.core.data import impute_values, one_hot_encode, validate_csv
-from chemml.utils.logging_config import log_error, log_info, log_warning, setup_logging
+"""ChemML - a desktop app for chemical data analysis and machine learning."""
 
-# Core package init file - expose main components
-from .core import models, data, chem
-from .ui import views, controllers, widgets
-from .utils import logging_config
+from chemml.utils.logging_config import setup_logging
 
-__version__ = "0.1.0"
+__version__ = "1.1.0"
 
-__all__ = ["models", "data", "chem", "views", "controllers", "widgets", "logging_config"]
+__all__ = ["setup_logging", "__version__"]

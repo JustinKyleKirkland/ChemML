@@ -10,6 +10,7 @@ from chemml.ui.controllers import CSVController
 from chemml.ui.views.csv_view import CSVView
 from chemml.ui.views.plot_view import PlotView
 from chemml.ui.views.ml_view import MLView
+from chemml.ui.views.settings_view import SettingsView
 from chemml.ui.assets.stylesheet import COMPLETE_STYLE
 from chemml.ui.assets.icons import (
 	create_data_icon,
@@ -106,13 +107,13 @@ class ChemMLApp(QWidget):
 		self.csv_view = CSVView()
 		self.plot_view = PlotView()
 		self.ml_view = MLView()
-		self.ml_settings_view = QWidget()  # Placeholder for ML Settings tab
+		self.settings_view = SettingsView()
 
 		# Add tabs with custom icons
 		self.tab_widget.addTab(self.csv_view, create_data_icon(), "Data")
 		self.tab_widget.addTab(self.plot_view, create_plot_icon(), "Visualize")
 		self.tab_widget.addTab(self.ml_view, create_ml_icon(), "ML Models")
-		self.tab_widget.addTab(self.ml_settings_view, create_settings_icon(), "Settings")
+		self.tab_widget.addTab(self.settings_view, create_settings_icon(), "Settings")
 
 		# Set tab tooltips
 		self.tab_widget.setTabToolTip(0, "Load and preprocess data")
@@ -142,6 +143,10 @@ class ChemMLApp(QWidget):
 		"""Connect all signal handlers between components."""
 		# Connect CSV view data_ready signal to update other views
 		self.csv_view.data_ready.connect(self.update_data)
+
+		# Push ML settings changes into the ML view, and seed it with the defaults.
+		self.settings_view.settings_changed.connect(self.ml_view.set_run_config)
+		self.ml_view.set_run_config(self.settings_view.get_config())
 
 		# Connect tab change signals
 		self.tab_widget.currentChanged.connect(self._handle_tab_change)

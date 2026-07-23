@@ -7,6 +7,7 @@ from chemml.core.chem import (
 	canonicalize_smiles,
 	detect_smiles_column,
 	calculate_basic_descriptors,
+	calculate_descriptor,
 	get_mol_from_smiles,
 	generate_morgan_fingerprint,
 	generate_maccs_fingerprint,
@@ -308,30 +309,35 @@ class CSVController:
 			if not detect_smiles_column(self.df, column_name):
 				raise ValueError(f"Column '{column_name}' does not contain valid SMILES strings")
 
+			if descriptor_set == "custom" and not custom_descriptors:
+				raise ValueError("No descriptors selected for the custom descriptor set.")
+
 			self._add_to_undo_stack()
 			self._clear_redo_stack()
 
+			# Pre-compute molecule objects once per row, preserving the DataFrame's
+			# index so assignments align correctly even after filtering/sorting.
+			mols = {
+				idx: (get_mol_from_smiles(smiles) if pd.notna(smiles) else None)
+				for idx, smiles in self.df[column_name].items()
+			}
+
 			if descriptor_set == "basic":
-				# Add basic descriptors (MW, LogP, TPSA)
-				for smiles_idx, smiles in enumerate(self.df[column_name]):
-					if pd.isna(smiles):
+				# Collect values per descriptor, then assign whole columns at once.
+				descriptor_values: dict = {}
+				for idx, mol in mols.items():
+					if mol is None:
 						continue
+					for desc_name, value in calculate_basic_descriptors(mol).items():
+						descriptor_values.setdefault(desc_name, {})[idx] = value
 
-					mol = get_mol_from_smiles(smiles)
-					if not mol:
-						continue
+				for desc_name, values in descriptor_values.items():
+					self.df[f"{column_name}_{desc_name}"] = pd.Series(values)
 
-					descriptors = calculate_basic_descriptors(mol)
-					for desc_name, value in descriptors.items():
-						desc_col = f"{column_name}_{desc_name}"
-						if desc_col not in self.df.columns:
-							self.df[desc_col] = None
-						self.df.at[smiles_idx, desc_col] = value
-
-			elif descriptor_set == "custom" and custom_descriptors:
-				# Add custom descriptors
-				# Implementation would go here
-				pass
+			elif descriptor_set == "custom":
+				for desc_name in custom_descriptors:
+					values = {idx: calculate_descriptor(mol, desc_name) for idx, mol in mols.items() if mol is not None}
+					self.df[f"{column_name}_{desc_name}"] = pd.Series(values)
 
 			return self.df
 
@@ -366,36 +372,32 @@ class CSVController:
 			self._clear_redo_stack()
 
 			if fp_type == "morgan":
-				# Generate Morgan fingerprints
-				fp_prefix = f"{column_name}_ECFP{radius*2}"
+				fp_prefix = f"{column_name}_ECFP{radius * 2}"
+				n_columns = n_bits
 
-				fp_data = []
-				for smiles in self.df[column_name]:
-					mol = get_mol_from_smiles(smiles) if pd.notna(smiles) else None
-					fp = generate_morgan_fingerprint(mol, radius, n_bits)
-					fp_data.append(fp)
-
-				# Create DataFrame with fingerprint bits
-				fp_df = pd.DataFrame(fp_data, columns=[f"{fp_prefix}_{i}" for i in range(n_bits)])
-
-				# Concatenate with original DataFrame
-				self.df = pd.concat([self.df, fp_df], axis=1)
-
+				def compute(mol):
+					return generate_morgan_fingerprint(mol, radius, n_bits)
 			elif fp_type == "maccs":
-				# Generate MACCS fingerprints
 				fp_prefix = f"{column_name}_MACCS"
+				n_columns = 167
 
-				fp_data = []
-				for smiles in self.df[column_name]:
-					mol = get_mol_from_smiles(smiles) if pd.notna(smiles) else None
-					fp = generate_maccs_fingerprint(mol)
-					fp_data.append(fp)
+				def compute(mol):
+					return generate_maccs_fingerprint(mol)
+			else:
+				raise ValueError(f"Unknown fingerprint type '{fp_type}'. Expected 'morgan' or 'maccs'.")
 
-				# Create DataFrame with fingerprint bits
-				fp_df = pd.DataFrame(fp_data, columns=[f"{fp_prefix}_{i}" for i in range(167)])
+			fp_data = [
+				compute(get_mol_from_smiles(smiles) if pd.notna(smiles) else None) for smiles in self.df[column_name]
+			]
 
-				# Concatenate with original DataFrame
-				self.df = pd.concat([self.df, fp_df], axis=1)
+			# Build the fingerprint frame on the SAME index as self.df so concat
+			# aligns rows correctly even after filtering/sorting.
+			fp_df = pd.DataFrame(
+				fp_data,
+				columns=[f"{fp_prefix}_{i}" for i in range(n_columns)],
+				index=self.df.index,
+			)
+			self.df = pd.concat([self.df, fp_df], axis=1)
 
 			return self.df
 

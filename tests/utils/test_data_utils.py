@@ -2,7 +2,7 @@ import unittest
 
 import pandas as pd
 
-from utils.data_utils import impute_values, one_hot_encode, validate_csv
+from chemml.core.data import impute_values, one_hot_encode, validate_csv
 
 
 class TestDataUtils(unittest.TestCase):
